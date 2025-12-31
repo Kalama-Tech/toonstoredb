@@ -74,7 +74,10 @@ impl ToonStore {
         })
     }
 
-    fn open_existing(data_path: &Path, idx_path: &Path) -> Result<(File, File, Vec<Option<u64>>, u64)> {
+    fn open_existing(
+        data_path: &Path,
+        idx_path: &Path,
+    ) -> Result<(File, File, Vec<Option<u64>>, u64)> {
         let mut data_file = OpenOptions::new().read(true).write(true).open(data_path)?;
 
         let mut idx_file = OpenOptions::new().read(true).write(true).open(idx_path)?;
@@ -116,7 +119,10 @@ impl ToonStore {
         Ok((data_file, idx_file, index, db_size))
     }
 
-    fn create_new(data_path: &Path, idx_path: &Path) -> Result<(File, File, Vec<Option<u64>>, u64)> {
+    fn create_new(
+        data_path: &Path,
+        idx_path: &Path,
+    ) -> Result<(File, File, Vec<Option<u64>>, u64)> {
         let mut data_file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -215,13 +221,13 @@ impl ToonStore {
         // Read in chunks for better performance
         let mut line = Vec::with_capacity(1024);
         let mut buffer = [0u8; 4096];
-        
+
         loop {
             let n = data_file.read(&mut buffer)?;
             if n == 0 {
                 break;
             }
-            
+
             // Find newline in buffer
             if let Some(pos) = buffer[..n].iter().position(|&b| b == b'\n') {
                 line.extend_from_slice(&buffer[..pos]);
@@ -257,7 +263,7 @@ impl ToonStore {
         }
 
         let mut index = self.index.write();
-        
+
         if row_id >= index.len() as u64 {
             return Err(Error::NotFound);
         }
