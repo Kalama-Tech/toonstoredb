@@ -2,9 +2,9 @@
 //!
 //! Uses intrusive linked list for O(1) eviction.
 
+use ahash::RandomState;
 use std::collections::HashMap;
 use std::hash::Hash;
-use ahash::RandomState;
 
 /// Node in the LRU doubly-linked list
 struct Node<K, V> {
@@ -32,7 +32,7 @@ where
     /// Create a new LRU cache with the given capacity
     pub fn new(capacity: usize) -> Self {
         assert!(capacity > 0, "Capacity must be greater than 0");
-        
+
         Self {
             map: HashMap::with_capacity_and_hasher(capacity, RandomState::new()),
             nodes: Vec::with_capacity(capacity),
@@ -66,7 +66,7 @@ where
             if self.map.len() >= self.capacity {
                 self.evict();
             }
-            
+
             let idx = self.alloc_node();
             self.nodes[idx] = Some(Node {
                 key: key.clone(),
@@ -74,18 +74,18 @@ where
                 prev: None,
                 next: self.head,
             });
-            
+
             if let Some(head_idx) = self.head {
                 if let Some(head) = &mut self.nodes[head_idx] {
                     head.prev = Some(idx);
                 }
             }
-            
+
             self.head = Some(idx);
             if self.tail.is_none() {
                 self.tail = Some(idx);
             }
-            
+
             self.map.insert(key, idx);
         }
     }
@@ -107,6 +107,7 @@ where
     }
 
     /// Check if the cache is empty
+    #[allow(dead_code)] // Used in public API later
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
@@ -126,18 +127,18 @@ where
         }
 
         self.unlink(idx);
-        
+
         if let Some(node) = &mut self.nodes[idx] {
             node.prev = None;
             node.next = self.head;
         }
-        
+
         if let Some(head_idx) = self.head {
             if let Some(head) = &mut self.nodes[head_idx] {
                 head.prev = Some(idx);
             }
         }
-        
+
         self.head = Some(idx);
     }
 
@@ -203,10 +204,10 @@ mod tests {
     #[test]
     fn test_lru_basic() {
         let mut cache = LruCache::new(2);
-        
+
         cache.put(1, "a");
         cache.put(2, "b");
-        
+
         assert_eq!(cache.get(&1), Some(&"a"));
         assert_eq!(cache.get(&2), Some(&"b"));
         assert_eq!(cache.len(), 2);
@@ -215,11 +216,11 @@ mod tests {
     #[test]
     fn test_lru_eviction() {
         let mut cache = LruCache::new(2);
-        
+
         cache.put(1, "a");
         cache.put(2, "b");
         cache.put(3, "c"); // Should evict 1
-        
+
         assert_eq!(cache.get(&1), None);
         assert_eq!(cache.get(&2), Some(&"b"));
         assert_eq!(cache.get(&3), Some(&"c"));
@@ -228,12 +229,12 @@ mod tests {
     #[test]
     fn test_lru_update() {
         let mut cache = LruCache::new(2);
-        
+
         cache.put(1, "a");
         cache.put(2, "b");
         cache.get(&1); // Move 1 to front
         cache.put(3, "c"); // Should evict 2
-        
+
         assert_eq!(cache.get(&1), Some(&"a"));
         assert_eq!(cache.get(&2), None);
         assert_eq!(cache.get(&3), Some(&"c"));
@@ -242,11 +243,11 @@ mod tests {
     #[test]
     fn test_lru_remove() {
         let mut cache = LruCache::new(3);
-        
+
         cache.put(1, "a");
         cache.put(2, "b");
         cache.put(3, "c");
-        
+
         assert_eq!(cache.remove(&2), Some("b"));
         assert_eq!(cache.len(), 2);
         assert_eq!(cache.get(&2), None);
@@ -255,11 +256,11 @@ mod tests {
     #[test]
     fn test_lru_clear() {
         let mut cache = LruCache::new(3);
-        
+
         cache.put(1, "a");
         cache.put(2, "b");
         cache.clear();
-        
+
         assert_eq!(cache.len(), 0);
         assert!(cache.is_empty());
     }
@@ -267,10 +268,10 @@ mod tests {
     #[test]
     fn test_lru_overwrite() {
         let mut cache = LruCache::new(2);
-        
+
         cache.put(1, "a");
         cache.put(1, "b"); // Overwrite
-        
+
         assert_eq!(cache.get(&1), Some(&"b"));
         assert_eq!(cache.len(), 1);
     }

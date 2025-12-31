@@ -84,11 +84,11 @@ mod tests {
     #[test]
     fn test_stats_basic() {
         let stats = CacheStats::new();
-        
+
         stats.record_hit();
         stats.record_hit();
         stats.record_miss();
-        
+
         assert_eq!(stats.hits(), 2);
         assert_eq!(stats.misses(), 1);
         assert_eq!(stats.hit_ratio(), 2.0 / 3.0);
@@ -97,11 +97,11 @@ mod tests {
     #[test]
     fn test_stats_reset() {
         let stats = CacheStats::new();
-        
+
         stats.record_hit();
         stats.record_miss();
         stats.reset();
-        
+
         assert_eq!(stats.hits(), 0);
         assert_eq!(stats.misses(), 0);
         assert_eq!(stats.hit_ratio(), 0.0);

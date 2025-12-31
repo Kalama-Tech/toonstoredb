@@ -1,9 +1,9 @@
 //! ToonCache: LRU cache wrapping ToonStore
 
+use parking_lot::RwLock;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::RwLock;
-use toonstoredb::{ToonStore, Result, Error};
+use toonstoredb::{Error, Result, ToonStore};
 
 use crate::lru::LruCache;
 use crate::stats::CacheStats;
@@ -12,13 +12,13 @@ use crate::stats::CacheStats;
 pub struct ToonCache {
     /// Underlying persistent storage
     store: Arc<ToonStore>,
-    
+
     /// LRU cache for hot data
     cache: Arc<RwLock<LruCache<u64, Vec<u8>>>>,
-    
+
     /// Cache statistics
     stats: Arc<CacheStats>,
-    
+
     /// Cache capacity
     capacity: usize,
 }
@@ -34,7 +34,7 @@ impl ToonCache {
     /// * `Result<ToonCache>` - Cache-enabled database handle
     pub fn new<P: AsRef<Path>>(path: P, capacity: usize) -> Result<Self> {
         let store = ToonStore::open(path)?;
-        
+
         Ok(Self {
             store: Arc::new(store),
             cache: Arc::new(RwLock::new(LruCache::new(capacity))),
@@ -52,12 +52,12 @@ impl ToonCache {
     /// * `Result<u64>` - Row ID of inserted line
     pub fn put(&self, line: &[u8]) -> Result<u64> {
         let row_id = self.store.put(line)?;
-        
+
         // Cache the value
         let mut cache = self.cache.write();
         cache.put(row_id, line.to_vec());
         self.stats.record_insert();
-        
+
         Ok(row_id)
     }
 
@@ -77,15 +77,15 @@ impl ToonCache {
                 return Ok(value.clone());
             }
         }
-        
+
         // Cache miss - fetch from storage
         self.stats.record_miss();
         let value = self.store.get(row_id)?;
-        
+
         // Update cache
         let mut cache = self.cache.write();
         cache.put(row_id, value.clone());
-        
+
         Ok(value)
     }
 
@@ -100,7 +100,7 @@ impl ToonCache {
         // Remove from cache
         let mut cache = self.cache.write();
         cache.remove(&row_id);
-        
+
         // Delete from storage
         self.store.delete(row_id)
     }
@@ -181,11 +181,11 @@ mod tests {
         let cache = ToonCache::new(dir.path(), 10).unwrap();
 
         let row_id = cache.put(b"test data").unwrap();
-        
+
         // First get - cache hit (put cached it)
         cache.get(row_id).unwrap();
         assert_eq!(cache.stats().hits(), 1);
-        
+
         // Second get - cache hit
         cache.get(row_id).unwrap();
         assert_eq!(cache.stats().hits(), 2);
@@ -198,20 +198,20 @@ mod tests {
 
         let id0 = cache.put(b"data 0").unwrap();
         let id1 = cache.put(b"data 1").unwrap();
-        
+
         // Cache now: [id1 (head), id0 (tail)]
         assert_eq!(cache.cache_len(), 2);
-        
+
         let id2 = cache.put(b"data 2").unwrap();
-        
+
         // Cache should evict id0 (LRU), now: [id2 (head), id1]
         assert_eq!(cache.cache_len(), 2);
-        
+
         // Verify id1 and id2 are cached
         cache.get(id1).unwrap();
         cache.get(id2).unwrap();
         assert_eq!(cache.stats().hits(), 2);
-        
+
         // id0 should be evicted (cache miss)
         cache.get(id0).unwrap();
         assert_eq!(cache.stats().misses(), 1);
@@ -257,9 +257,9 @@ mod tests {
         cache.put(b"data 1").unwrap();
 
         assert_eq!(cache.cache_len(), 2);
-        
+
         cache.clear_cache();
-        
+
         assert_eq!(cache.cache_len(), 0);
         assert_eq!(cache.stats().hits(), 0);
     }

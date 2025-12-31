@@ -90,5 +90,10 @@ fn bench_cache_miss(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_cached_get, bench_mixed_50_50, bench_cache_miss);
+criterion_group!(
+    benches,
+    bench_cached_get,
+    bench_mixed_50_50,
+    bench_cache_miss
+);
 criterion_main!(benches);

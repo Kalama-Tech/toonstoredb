@@ -15,8 +15,8 @@
 
 #![warn(missing_docs)]
 
-mod lru;
 mod cache;
+mod lru;
 mod stats;
 
 pub use cache::ToonCache;
