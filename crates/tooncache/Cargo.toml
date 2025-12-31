@@ -1,0 +1,21 @@
+[package]
+name = "tooncache"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "LRU cache layer for ToonStore with high-performance in-memory storage"
+
+[dependencies]
+ahash.workspace = true
+parking_lot.workspace = true
+toonstoredb = { path = "../toonstoredb" }
+
+[dev-dependencies]
+criterion.workspace = true
+tempfile = "3.8"
+
+[[bench]]
+name = "cache"
+harness = false

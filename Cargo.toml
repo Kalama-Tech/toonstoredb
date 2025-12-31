@@ -2,8 +2,8 @@
 resolver = "2"
 members = [
     "crates/toonstoredb",
-    # Week 2-4 crates (commented out until implemented)
-    # "crates/tooncache",
+    "crates/tooncache",
+    # Week 3-4 crates (commented out until implemented)
     # "crates/tstd",
     # "crates/toonstore-py",
 ]
