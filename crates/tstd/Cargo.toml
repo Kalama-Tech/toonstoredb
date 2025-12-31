@@ -1,0 +1,26 @@
+[package]
+name = "tstd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "ToonStore Daemon - Redis-compatible RESP server"
+
+[[bin]]
+name = "tstd"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+tooncache = { path = "../tooncache" }
+toonstoredb = { path = "../toonstoredb" }
+bytes = "1.5"
+clap = { version = "4.4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+
+[dev-dependencies]
+redis = "0.24"
+tempfile = "3.8"
