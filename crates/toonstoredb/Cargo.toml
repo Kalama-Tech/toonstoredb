@@ -16,7 +16,6 @@ nom.workspace = true
 criterion.workspace = true
 tempfile = "3.8"
 
-# Benchmarks commented out until Week 3
-# [[bench]]
-# name = "storage"
-# harness = false
+[[bench]]
+name = "storage"
+harness = false

@@ -212,15 +212,23 @@ impl ToonStore {
         let mut data_file = self.data_file.write();
         data_file.seek(SeekFrom::Start(offset))?;
 
-        // Read until newline
-        let mut line = Vec::new();
-        let mut buf = [0u8; 1];
+        // Read in chunks for better performance
+        let mut line = Vec::with_capacity(1024);
+        let mut buffer = [0u8; 4096];
+        
         loop {
-            data_file.read_exact(&mut buf)?;
-            if buf[0] == b'\n' {
+            let n = data_file.read(&mut buffer)?;
+            if n == 0 {
                 break;
             }
-            line.push(buf[0]);
+            
+            // Find newline in buffer
+            if let Some(pos) = buffer[..n].iter().position(|&b| b == b'\n') {
+                line.extend_from_slice(&buffer[..pos]);
+                break;
+            } else {
+                line.extend_from_slice(&buffer[..n]);
+            }
         }
 
         Ok(line)
