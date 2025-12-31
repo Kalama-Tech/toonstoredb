@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/toonstoredb",
+    "crates/tooncache",
+    "crates/tstd",
+    "crates/toonstore-py",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["ToonStore Contributors"]
+repository = "https://github.com/yourusername/toonstore"
+
+[workspace.dependencies]
+# Storage engine
+memmap2 = "0.9"
+parking_lot = "0.12"
+nom = "7.1"
+
+# Caching
+ahash = "0.8"
+
+# Async runtime (week 3)
+tokio = { version = "1.35", features = ["full"] }
+
+# Python bindings (week 4)
+pyo3 = { version = "0.20", features = ["extension-module"] }
+
+# Testing
+criterion = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true

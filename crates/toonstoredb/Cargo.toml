@@ -1,0 +1,21 @@
+[package]
+name = "toonstoredb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Embedded TOON-format database with mmap storage"
+
+[dependencies]
+memmap2.workspace = true
+parking_lot.workspace = true
+nom.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+tempfile = "3.8"
+
+[[bench]]
+name = "storage"
+harness = false
