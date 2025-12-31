@@ -16,11 +16,9 @@
 //! ```
 
 use nom::{
-    bytes::complete::{tag, take_until},
-    character::complete::{char, digit1, multispace0, multispace1},
-    combinator::{map_res, opt},
-    multi::separated_list0,
-    sequence::{delimited, preceded, terminated, tuple},
+    bytes::complete::{take_until},
+    character::complete::{char},
+    sequence::{terminated},
     IResult,
 };
 
@@ -92,6 +90,7 @@ pub fn create_header(version: u32, row_count: u32) -> Vec<u8> {
 /// Parse a single TOON line (raw, no interpretation)
 ///
 /// Returns the line content without the trailing newline
+#[allow(dead_code)] // Will be used for scan() operation
 pub fn parse_line(input: &[u8]) -> IResult<&[u8], &[u8]> {
     terminated(take_until("\n"), char('\n'))(input)
 }

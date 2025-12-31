@@ -5,11 +5,10 @@
 //! - `db.toon.idx`: Index file mapping row IDs to offsets
 
 use std::fs::{File, OpenOptions};
-use std::io::{self, Write, Seek, SeekFrom, Read};
+use std::io::{Write, Seek, SeekFrom, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use parking_lot::RwLock;
-use memmap2::{Mmap, MmapMut};
 
 use crate::error::{Error, Result};
 use crate::parser::{TOON_MAGIC, TOON_IDX_MAGIC, create_header, parse_header};
@@ -23,6 +22,7 @@ const MAX_DB_SIZE: u64 = 1024 * 1024 * 1024;
 /// ToonStore is the main database handle
 pub struct ToonStore {
     /// Path to the database directory
+    #[allow(dead_code)] // Will be used for compaction
     path: PathBuf,
     
     /// Data file handle
@@ -88,7 +88,7 @@ impl ToonStore {
         // Read and validate data file header
         let mut header_buf = vec![0u8; TOON_MAGIC.len() + 8];
         data_file.read_exact(&mut header_buf)?;
-        let header = parse_header(&header_buf)?;
+        let _header = parse_header(&header_buf)?;
 
         // Read index file
         let mut idx_magic = vec![0u8; TOON_IDX_MAGIC.len()];
