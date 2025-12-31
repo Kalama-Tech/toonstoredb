@@ -2,9 +2,10 @@
 resolver = "2"
 members = [
     "crates/toonstoredb",
-    "crates/tooncache",
-    "crates/tstd",
-    "crates/toonstore-py",
+    # Week 2-4 crates (commented out until implemented)
+    # "crates/tooncache",
+    # "crates/tstd",
+    # "crates/toonstore-py",
 ]
 
 [workspace.package]
