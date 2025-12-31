@@ -58,7 +58,7 @@ fn bench_mixed_workload(c: &mut Criterion) {
         
         let mut counter = 0u64;
         b.iter(|| {
-            if counter % 2 == 0 {
+            if counter.is_multiple_of(2) {
                 black_box(db.get(counter % 100).ok());
             } else {
                 black_box(db.put(&data).ok());
