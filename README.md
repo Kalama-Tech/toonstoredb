@@ -24,7 +24,7 @@ Currently implementing the core storage layer (`toonstoredb`).
 cargo install toonstore
 
 # Or build from source
-git clone https://github.com/yourusername/toonstore
+git clone https://github.com/Kalama-Tech/toonstoredb
 cd toonstore
 cargo build --release
 ```

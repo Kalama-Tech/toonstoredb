@@ -15,12 +15,7 @@
 //!   value1,value2,...
 //! ```
 
-use nom::{
-    bytes::complete::{take_until},
-    character::complete::{char},
-    sequence::{terminated},
-    IResult,
-};
+use nom::{bytes::complete::take_until, character::complete::char, sequence::terminated, IResult};
 
 use crate::error::{Error, Result};
 
@@ -103,7 +98,7 @@ mod tests {
     fn test_parse_header() {
         let header = create_header(1, 42);
         let parsed = parse_header(&header).unwrap();
-        
+
         assert_eq!(parsed.version, 1);
         assert_eq!(parsed.row_count, 42);
     }
@@ -112,7 +107,7 @@ mod tests {
     fn test_parse_header_invalid_magic() {
         let mut header = create_header(1, 0);
         header[0] = b'X'; // Corrupt magic
-        
+
         let result = parse_header(&header);
         assert!(result.is_err());
     }
@@ -128,7 +123,7 @@ mod tests {
     fn test_parse_line() {
         let input = b"users[2]{id,name}:\nmore data";
         let (remaining, line) = parse_line(input).unwrap();
-        
+
         assert_eq!(line, b"users[2]{id,name}:");
         assert_eq!(remaining, b"more data");
     }
@@ -136,14 +131,20 @@ mod tests {
     #[test]
     fn test_create_header_format() {
         let header = create_header(1, 100);
-        
+
         // Check magic
         assert_eq!(&header[0..8], TOON_MAGIC);
-        
+
         // Check version (little-endian)
-        assert_eq!(u32::from_le_bytes([header[8], header[9], header[10], header[11]]), 1);
-        
+        assert_eq!(
+            u32::from_le_bytes([header[8], header[9], header[10], header[11]]),
+            1
+        );
+
         // Check row_count (little-endian)
-        assert_eq!(u32::from_le_bytes([header[12], header[13], header[14], header[15]]), 100);
+        assert_eq!(
+            u32::from_le_bytes([header[12], header[13], header[14], header[15]]),
+            100
+        );
     }
 }

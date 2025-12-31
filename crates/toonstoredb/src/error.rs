@@ -11,19 +11,19 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     /// I/O error
     Io(io::Error),
-    
+
     /// Parse error
     Parse(String),
-    
+
     /// Value too large (max 1 MB)
     ValueTooLarge(usize),
-    
+
     /// Database full (max 1 GB)
     DatabaseFull(u64),
-    
+
     /// Key not found
     NotFound,
-    
+
     /// Database is closed
     Closed,
 }

@@ -10,9 +10,9 @@
 
 #![warn(missing_docs)]
 
+mod error;
 mod parser;
 mod storage;
-mod error;
 
 pub use error::{Error, Result};
 pub use storage::ToonStore;
