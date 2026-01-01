@@ -2,22 +2,136 @@
 
 ⚠️ **NOT PRODUCTION READY - v0.1 Alpha** ⚠️
 
-A **blazingly fast** embedded database with Redis-compatible protocol, built in Rust. ToonStore combines the performance of an embedded database (5.28M ops/sec) with the convenience of Redis compatibility.
+**A blazingly fast embedded database with Redis-compatible protocol, built in Rust.**
 
-[![CI](https://github.com/Kalama-Tech/toonstoredb/workflows/CI/badge.svg)](https://github.com/Kalama-Tech/toonstoredb/actions)
+ToonStore is a high-performance key-value store that gives you the **speed of embedded databases** (5.28M ops/sec) with the **convenience of Redis compatibility**. Use it as an embedded library for maximum performance, or run it as a Redis-compatible server accessible from any language.
+
+[![CI/CD](https://github.com/Kalama-Tech/toonstoredb/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/Kalama-Tech/toonstoredb/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker Pulls](https://img.shields.io/docker/pulls/samso9th/toonstore)](https://hub.docker.com/r/samso9th/toonstore)
+
+---
+
+## 🎯 What is ToonStore?
+
+ToonStore is a **persistent key-value database** designed for applications that need:
+- 🚀 **Extreme performance** - 5.28M ops/sec for cached reads, 66x faster than network databases
+- 💾 **Data persistence** - All data stored on disk and survives restarts
+- 🔌 **Redis compatibility** - Works with existing Redis clients (Node.js, Python, Go, etc.)
+- 📦 **Embedded mode** - Use directly in Rust applications for maximum speed
+- 🌐 **Network mode** - Run as a server, connect from any language
+
+---
+
+## ⚡ Why ToonStore?
+
+### The Problem
+- **Redis** is fast but volatile (RAM-only by default) and complex to persist data
+- **PostgreSQL/MySQL** are reliable but slower for key-value workloads
+- **RocksDB/LevelDB** are fast but lack network access and Redis compatibility
+
+### The Solution: ToonStore
+ToonStore combines the best of all worlds:
+
+| Feature | ToonStore | Redis | PostgreSQL | RocksDB |
+|---------|-----------|-------|------------|---------|
+| **Speed** | 5.28M ops/sec (embedded) | ~80k ops/sec | ~65k ops/sec | ~100k ops/sec |
+| **Persistent** | ✅ Yes | ❌ Optional | ✅ Yes | ✅ Yes |
+| **Redis Protocol** | ✅ Yes | ✅ Yes | ❌ No | ❌ No |
+| **Embedded Mode** | ✅ Yes | ❌ No | ❌ No | ✅ Yes |
+| **Network Mode** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
+| **Multi-language** | ✅ Yes | ✅ Yes | ✅ Yes | ⚠️ Limited |
+
+---
+
+## 🎁 Key Benefits
+
+### 1. **Blazingly Fast**
+- **5.28M operations/second** in embedded mode (cached reads)
+- **215k ops/sec** for storage operations (66x faster than network)
+- **32M deletions/second** (320x faster than Redis)
+
+### 2. **Data Persistence**
+- All data stored on disk using efficient TOON format
+- Survives restarts and crashes
+- Memory-mapped I/O for fast disk access
+
+### 3. **Redis Compatible**
+- Use any Redis client library (50+ languages supported)
+- Familiar commands: `GET`, `SET`, `DEL`, `EXISTS`, `KEYS`
+- Drop-in replacement for Redis in many use cases
+
+### 4. **Dual Mode Operation**
+
+**Network Mode:**
+```javascript
+// Connect from Node.js, Python, Go, etc.
+const redis = require('redis');
+const client = redis.createClient({ url: 'redis://localhost:6379' });
+await client.set('key', 'value');
+```
+
+**Embedded Mode:**
+```rust
+// Direct Rust integration (66x faster!)
+let cache = ToonCache::new("./data", 10000)?;
+let id = cache.put(b"data")?;
+let data = cache.get(id)?;
+```
+
+### 5. **Built-in LRU Cache**
+- Automatic caching of hot data in RAM
+- 10,000 item default capacity (configurable)
+- No manual cache management needed
+
+### 6. **Easy Deployment**
+- Single binary, no dependencies
+- Docker images available
+- Works on Linux, Windows, macOS
+- Cross-platform (amd64 and arm64)
+
+---
+
+## 📊 Performance Comparison
+
+ToonStore is designed for speed:
+
+| Operation | ToonStore (Embedded) | ToonStore (Network) | Redis | PostgreSQL |
+|-----------|---------------------|---------------------|-------|------------|
+| **GET (cached)** | **5.28M ops/sec** | ~80k ops/sec | ~80k ops/sec | ~65k ops/sec |
+| **GET (storage)** | 215k ops/sec | ~70k ops/sec | ~65k ops/sec | ~65k ops/sec |
+| **SET** | 82k ops/sec | ~60k ops/sec | ~60k ops/sec | ~55k ops/sec |
+| **DELETE** | 32M ops/sec | ~100k ops/sec | ~100k ops/sec | ~70k ops/sec |
+
+**Key Insight:** Embedded mode is 66x faster than network mode (no TCP overhead)
+
+See [BENCHMARKS.md](BENCHMARKS.md) for detailed benchmarks and methodology.
 
 ---
 
 ## 🚀 Quick Start
 
-### Option 1: Docker (Easiest)
+### Option 1: Docker (Easiest - Recommended)
 
 ```bash
-# Pull and run
-docker run -d -p 6379:6379 -v toonstore_data:/data toonstore/tstd:latest
+# Pull from Docker Hub
+docker pull samso9th/toonstore:latest
 
-# Connect with redis-cli
+# Or pull from GitHub Container Registry
+docker pull ghcr.io/kalama-tech/toonstoredb:latest
+
+# Run ToonStore
+docker run -d \
+  --name toonstore \
+  -p 6379:6379 \
+  -v toonstore_data:/data \
+  samso9th/toonstore:latest
+
+# Test connection
+redis-cli -h 127.0.0.1 -p 6379 PING
+# Output: PONG
+
+# Use it
 redis-cli -h 127.0.0.1 -p 6379
 127.0.0.1:6379> SET mykey "Hello World"
 OK
@@ -25,33 +139,51 @@ OK
 "Hello World"
 ```
 
-**Or with Docker Compose:**
+**With Docker Compose:**
 ```bash
 # Download docker-compose.yml
-curl -O https://raw.githubusercontent.com/yourusername/toonstoredb/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/Kalama-Tech/toonstoredb/main/docker-compose.yml
 
 # Start
 docker-compose up -d
+
+# Stop
+docker-compose down
 ```
 
-### Option 2: Network Server (Redis-compatible)
+### Option 2: Pre-built Binary (Coming Soon)
 
 ```bash
-# Install
-cargo install tstd
+# Linux/macOS
+curl -L https://github.com/Kalama-Tech/toonstoredb/releases/latest/download/tstd -o tstd
+chmod +x tstd
+./tstd --bind 0.0.0.0:6379
 
-# Start server
-tstd --bind 0.0.0.0:6379
-
-# Connect with redis-cli
-redis-cli -h 127.0.0.1 -p 6379
-127.0.0.1:6379> SET mykey "Hello World"
-OK
-127.0.0.1:6379> GET mykey
-"Hello World"
+# Windows
+# Download from: https://github.com/Kalama-Tech/toonstoredb/releases
 ```
 
-### Option 3: Embedded Library (Maximum Performance)
+### Option 3: Build from Source
+
+```bash
+# Clone repository
+git clone https://github.com/Kalama-Tech/toonstoredb.git
+cd toonstoredb
+
+# Build (requires Rust 1.70+)
+cargo build --release
+
+# Run
+./target/release/tstd --bind 0.0.0.0:6379
+```
+
+### Option 4: Embedded Library (Rust Only)
+
+```toml
+# Cargo.toml
+[dependencies]
+tooncache = { git = "https://github.com/Kalama-Tech/toonstoredb" }
+```
 
 ```rust
 use tooncache::ToonCache;
@@ -73,20 +205,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
-## 📊 Performance
+## 🔌 Connect from Your Application
 
-ToonStore is **fast**. Really fast.
+ToonStore is Redis-compatible, so you can use any Redis client library:
 
-| Operation | Embedded Mode | Network Mode | vs Redis |
-|-----------|--------------|--------------|----------|
-| **GET (cached)** | **5.28M ops/sec** | ~80k ops/sec | 26x faster |
-| **GET (storage)** | 215k ops/sec | ~70k ops/sec | 1.08x faster |
-| **SET** | 82k ops/sec | ~60k ops/sec | ≈ Equal |
-| **DELETE** | 32M ops/sec | ~100k ops/sec | 320x faster |
+### Node.js
+```javascript
+const redis = require('redis');
+const client = redis.createClient({ url: 'redis://localhost:6379' });
 
-**Embedded mode is 66x faster than network mode** (no TCP overhead)
+await client.connect();
+await client.set('user:1', 'John Doe');
+const user = await client.get('user:1');
+console.log(user); // "John Doe"
+```
 
-See [BENCHMARKS.md](BENCHMARKS.md) for detailed comparisons with Redis, PostgreSQL, MySQL, and MongoDB.
+### Python
+```python
+import redis
+
+client = redis.from_url('redis://localhost:6379')
+client.set('user:1', 'John Doe')
+user = client.get('user:1')
+print(user)  # b'John Doe'
+```
+
+### Go
+```go
+import "github.com/redis/go-redis/v9"
+
+client := redis.NewClient(&redis.Options{
+    Addr: "localhost:6379",
+})
+
+client.Set(ctx, "user:1", "John Doe", 0)
+user, _ := client.Get(ctx, "user:1").Result()
+fmt.Println(user)  // "John Doe"
+```
+
+See [docs/connecting-from-apps.md](docs/connecting-from-apps.md) for more examples.
 
 ---
 
