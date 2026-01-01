@@ -1,16 +1,21 @@
 //! Command handler for RESP server
 
 use crate::resp::RespValue;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use tooncache::ToonCache;
 
 pub struct CommandHandler {
     cache: Arc<ToonCache>,
+    key_map: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 impl CommandHandler {
     pub fn new(cache: Arc<ToonCache>) -> Self {
-        Self { cache }
+        Self {
+            cache,
+            key_map: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     pub fn handle(&self, cmd: RespValue) -> RespValue {
@@ -73,10 +78,11 @@ impl CommandHandler {
             _ => return RespValue::Error("ERR invalid key type".to_string()),
         };
 
-        // Parse key as row_id (for now, simple numeric keys)
-        let row_id: u64 = match key.parse() {
-            Ok(id) => id,
-            Err(_) => return RespValue::BulkString(None), // Key not found
+        // Look up row_id from key_map
+        let key_map = self.key_map.read().unwrap();
+        let row_id = match key_map.get(&key) {
+            Some(id) => *id,
+            None => return RespValue::BulkString(None), // Key not found
         };
 
         match self.cache.get(row_id) {
@@ -90,8 +96,11 @@ impl CommandHandler {
             return RespValue::Error("ERR wrong number of arguments for 'set' command".to_string());
         }
 
-        let _key = match &args[0] {
-            RespValue::BulkString(Some(k)) => k,
+        let key = match &args[0] {
+            RespValue::BulkString(Some(k)) => match String::from_utf8(k.clone()) {
+                Ok(s) => s,
+                Err(_) => return RespValue::Error("ERR invalid key".to_string()),
+            },
             _ => return RespValue::Error("ERR invalid key type".to_string()),
         };
 
@@ -100,8 +109,20 @@ impl CommandHandler {
             _ => return RespValue::Error("ERR invalid value type".to_string()),
         };
 
+        // Check if key already exists
+        let mut key_map = self.key_map.write().unwrap();
+
+        if let Some(&existing_row_id) = key_map.get(&key) {
+            // Update existing key - delete old value first
+            let _ = self.cache.delete(existing_row_id);
+        }
+
+        // Insert new value and map key to row_id
         match self.cache.put(value) {
-            Ok(_row_id) => RespValue::SimpleString("OK".to_string()),
+            Ok(row_id) => {
+                key_map.insert(key, row_id);
+                RespValue::SimpleString("OK".to_string())
+            }
             Err(e) => RespValue::Error(format!("ERR {}", e)),
         }
     }
@@ -112,10 +133,12 @@ impl CommandHandler {
         }
 
         let mut deleted = 0i64;
+        let mut key_map = self.key_map.write().unwrap();
+
         for arg in args {
             if let RespValue::BulkString(Some(k)) = arg {
-                if let Ok(key_str) = String::from_utf8(k.clone()) {
-                    if let Ok(row_id) = key_str.parse::<u64>() {
+                if let Ok(key) = String::from_utf8(k.clone()) {
+                    if let Some(row_id) = key_map.remove(&key) {
                         if self.cache.delete(row_id).is_ok() {
                             deleted += 1;
                         }
@@ -135,13 +158,13 @@ impl CommandHandler {
         }
 
         let mut count = 0i64;
+        let key_map = self.key_map.read().unwrap();
+
         for arg in args {
             if let RespValue::BulkString(Some(k)) = arg {
-                if let Ok(key_str) = String::from_utf8(k.clone()) {
-                    if let Ok(row_id) = key_str.parse::<u64>() {
-                        if self.cache.get(row_id).is_ok() {
-                            count += 1;
-                        }
+                if let Ok(key) = String::from_utf8(k.clone()) {
+                    if key_map.contains_key(&key) {
+                        count += 1;
                     }
                 }
             }
@@ -150,23 +173,46 @@ impl CommandHandler {
         RespValue::Integer(count)
     }
 
-    fn handle_keys(&self, _args: &[RespValue]) -> RespValue {
-        // For now, return empty array
-        // TODO: Implement pattern matching for keys
-        RespValue::Array(Some(vec![]))
+    fn handle_keys(&self, args: &[RespValue]) -> RespValue {
+        let pattern = if args.is_empty() {
+            "*".to_string()
+        } else {
+            match &args[0] {
+                RespValue::BulkString(Some(p)) => match String::from_utf8(p.clone()) {
+                    Ok(s) => s,
+                    Err(_) => return RespValue::Error("ERR invalid pattern".to_string()),
+                },
+                _ => return RespValue::Error("ERR invalid pattern type".to_string()),
+            }
+        };
+
+        let key_map = self.key_map.read().unwrap();
+        let mut matching_keys = Vec::new();
+
+        for key in key_map.keys() {
+            if matches_pattern(key, &pattern) {
+                matching_keys.push(RespValue::BulkString(Some(key.as_bytes().to_vec())));
+            }
+        }
+
+        RespValue::Array(Some(matching_keys))
     }
 
     fn handle_dbsize(&self) -> RespValue {
-        RespValue::Integer(self.cache.len() as i64)
+        let key_map = self.key_map.read().unwrap();
+        RespValue::Integer(key_map.len() as i64)
     }
 
     fn handle_flushdb(&self) -> RespValue {
+        let mut key_map = self.key_map.write().unwrap();
+        key_map.clear();
         self.cache.clear_cache();
         RespValue::SimpleString("OK".to_string())
     }
 
     fn handle_info(&self, _args: &[RespValue]) -> RespValue {
         let stats = self.cache.stats();
+        let key_map = self.key_map.read().unwrap();
         let info = format!(
             "# Server\r\n\
              toonstore_version:0.1.0\r\n\
@@ -178,7 +224,7 @@ impl CommandHandler {
              cache_hits:{}\r\n\
              cache_misses:{}\r\n\
              cache_hit_ratio:{:.2}\r\n",
-            self.cache.len(),
+            key_map.len(),
             self.cache.cache_len(),
             self.cache.capacity(),
             stats.hits(),
@@ -192,6 +238,62 @@ impl CommandHandler {
         // Return empty array for COMMAND (redis-cli compatibility)
         RespValue::Array(Some(vec![]))
     }
+}
+
+/// Simple glob pattern matching for Redis KEYS command
+/// Supports: * (matches any sequence), ? (matches single char)
+fn matches_pattern(key: &str, pattern: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+
+    let key_chars: Vec<char> = key.chars().collect();
+    let pattern_chars: Vec<char> = pattern.chars().collect();
+
+    let mut key_idx = 0;
+    let mut pattern_idx = 0;
+    let mut star_idx = None;
+    let mut match_idx = 0;
+
+    while key_idx < key_chars.len() {
+        if pattern_idx < pattern_chars.len() {
+            match pattern_chars[pattern_idx] {
+                '*' => {
+                    star_idx = Some(pattern_idx);
+                    match_idx = key_idx;
+                    pattern_idx += 1;
+                    continue;
+                }
+                '?' => {
+                    key_idx += 1;
+                    pattern_idx += 1;
+                    continue;
+                }
+                c if c == key_chars[key_idx] => {
+                    key_idx += 1;
+                    pattern_idx += 1;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        // No match, backtrack to last star if exists
+        if let Some(star) = star_idx {
+            pattern_idx = star + 1;
+            match_idx += 1;
+            key_idx = match_idx;
+        } else {
+            return false;
+        }
+    }
+
+    // Check remaining pattern chars are all stars
+    while pattern_idx < pattern_chars.len() && pattern_chars[pattern_idx] == '*' {
+        pattern_idx += 1;
+    }
+
+    pattern_idx == pattern_chars.len()
 }
 
 #[cfg(test)]
