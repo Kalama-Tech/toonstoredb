@@ -18,9 +18,9 @@ impl CommandHandler {
     pub fn new(cache: Arc<ToonCache>, data_dir: &str) -> Self {
         let keymap_path = format!("{}/keymap.txt", data_dir);
         let key_map = Self::load_keymap(&keymap_path);
-        
+
         info!("Loaded {} keys from persistent storage", key_map.len());
-        
+
         Self {
             cache,
             key_map: Arc::new(RwLock::new(key_map)),
@@ -31,28 +31,26 @@ impl CommandHandler {
     /// Load key mapping from disk
     fn load_keymap(path: &str) -> HashMap<String, u64> {
         let mut map = HashMap::new();
-        
+
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    let parts: Vec<&str> = line.split('\t').collect();
-                    if parts.len() == 2 {
-                        if let Ok(row_id) = parts[1].parse::<u64>() {
-                            map.insert(parts[0].to_string(), row_id);
-                        }
+            for line in reader.lines().map_while(Result::ok) {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() == 2 {
+                    if let Ok(row_id) = parts[1].parse::<u64>() {
+                        map.insert(parts[0].to_string(), row_id);
                     }
                 }
             }
         }
-        
+
         map
     }
 
     /// Save key mapping to disk
     fn save_keymap(&self) {
         let key_map = self.key_map.read().unwrap();
-        
+
         match OpenOptions::new()
             .write(true)
             .create(true)
@@ -136,27 +134,31 @@ impl CommandHandler {
 
         // Look up row_id from key_map
         let key_map = self.key_map.read().unwrap();
-        info!("GET: Looking for key '{}', keymap has {} keys", key, key_map.len());
+        info!(
+            "GET: Looking for key '{}', keymap has {} keys",
+            key,
+            key_map.len()
+        );
         let row_id = match key_map.get(&key) {
             Some(id) => {
                 info!("GET: Found key '{}' -> row_id {}", key, id);
                 *id
-            },
+            }
             None => {
                 info!("GET: Key '{}' not found in keymap", key);
-                return RespValue::BulkString(None)
-            }, // Key not found
+                return RespValue::BulkString(None);
+            } // Key not found
         };
 
         match self.cache.get(row_id) {
             Ok(data) => {
                 info!("GET: Successfully retrieved data for row_id {}", row_id);
                 RespValue::BulkString(Some(data))
-            },
+            }
             Err(e) => {
                 error!("GET: Failed to retrieve data for row_id {}: {}", row_id, e);
                 RespValue::BulkString(None)
-            },
+            }
         }
     }
 

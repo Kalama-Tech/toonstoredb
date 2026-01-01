@@ -188,11 +188,11 @@ impl ToonStore {
 
         // Write index entry to disk immediately
         let mut idx_file = self.idx_file.write();
-        
+
         // Update count at start of index file
         idx_file.seek(SeekFrom::Start(TOON_IDX_MAGIC.len() as u64))?;
         idx_file.write_all(&(index.len() as u32).to_le_bytes())?;
-        
+
         // Append new offset
         idx_file.seek(SeekFrom::End(0))?;
         idx_file.write_all(&offset.to_le_bytes())?;
@@ -290,7 +290,7 @@ impl ToonStore {
 
         // Update index file immediately
         let mut idx_file = self.idx_file.write();
-        
+
         // Seek to the offset for this row_id in the index file
         // Index file format: TOONIDX1 (8 bytes) + count (4 bytes) + offsets (8 bytes each)
         let offset_pos = TOON_IDX_MAGIC.len() as u64 + 4 + (row_id * 8);
