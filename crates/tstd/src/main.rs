@@ -74,6 +74,9 @@ async fn main() -> Result<()> {
     let cache = Arc::new(ToonCache::new(&args.data, args.capacity)?);
     info!("Database opened successfully");
 
+    // Initialize shared command handler (loads keymap once)
+    let handler = Arc::new(CommandHandler::new(cache, &args.data));
+
     // Bind TCP listener
     let listener = TcpListener::bind(&args.bind).await?;
     info!("Server listening on {}", args.bind);
@@ -141,10 +144,10 @@ async fn main() -> Result<()> {
         match listener.accept().await {
             Ok((stream, addr)) => {
                 info!("New connection from {}", addr);
-                let cache = Arc::clone(&cache);
+                let handler = Arc::clone(&handler);
 
                 tokio::spawn(async move {
-                    if let Err(e) = handle_client(stream, cache).await {
+                    if let Err(e) = handle_client(stream, handler).await {
                         error!("Error handling client {}: {}", addr, e);
                     }
                     info!("Connection closed: {}", addr);
@@ -157,8 +160,7 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn handle_client(mut stream: TcpStream, cache: Arc<ToonCache>) -> Result<()> {
-    let handler = CommandHandler::new(cache);
+async fn handle_client(mut stream: TcpStream, handler: Arc<CommandHandler>) -> Result<()> {
     let mut buffer = BytesMut::with_capacity(4096);
 
     loop {
