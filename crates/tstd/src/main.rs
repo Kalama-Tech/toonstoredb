@@ -82,32 +82,57 @@ async fn main() -> Result<()> {
     println!("\n╔══════════════════════════════════════════════════════════════╗");
     println!("║          ToonStore Server Ready!                            ║");
     println!("╚══════════════════════════════════════════════════════════════╝");
-    println!("\n📡 RESP Protocol (Redis-compatible):");
+    println!("\n📡 NETWORK MODE (Redis-compatible RESP Protocol):");
     println!("   Connection String: redis://{}", args.bind);
     println!(
-        "   redis-cli: redis-cli -h {} -p {}",
+        "   redis-cli Command: redis-cli -h {} -p {}",
         args.bind.split(':').next().unwrap_or("127.0.0.1"),
         args.bind.split(':').nth(1).unwrap_or("6379")
     );
-    println!("\n💾 Direct Database Access (Embedded):");
-    println!("   Storage Layer: toonstoredb @ {}", args.data);
+    println!("   Protocol:          RESP (works with any Redis client)");
+    println!("\n💾 EMBEDDED MODE (Direct Database Access):");
+    println!("   ┌─────────────────────────────────────────────────────────┐");
+    println!("   │ Layer           │ Connection String                    │");
+    println!("   ├─────────────────────────────────────────────────────────┤");
     println!(
-        "   Cache Layer:   tooncache (capacity: {} items)",
-        args.capacity
+        "   │ toonstoredb     │ file://{}                  │",
+        args.data
     );
-    println!("   Mode:          In-process (no network overhead)");
-    println!("\n📊 Configuration:");
+    println!(
+        "   │ (storage)       │ ToonStore::open(\"{}\")        │",
+        args.data
+    );
+    println!("   ├─────────────────────────────────────────────────────────┤");
+    println!(
+        "   │ tooncache       │ file://{}?capacity={}   │",
+        args.data, args.capacity
+    );
+    println!(
+        "   │ (cache+storage) │ ToonCache::new(\"{}\", {}) │",
+        args.data, args.capacity
+    );
+    println!("   └─────────────────────────────────────────────────────────┘");
+    println!("   Performance:       66x faster than network mode");
+    println!("\n📊 CONFIGURATION:");
     println!("   Data Directory:  {}", args.data);
     println!("   Cache Capacity:  {} items", args.capacity);
     println!("   Cache Hit Rate:  Will be shown in INFO command");
-    println!("\n💡 Usage:");
+    println!("\n💡 USAGE EXAMPLES:");
+    println!("   Network Mode:");
+    println!("     Python:  redis.from_url('redis://{}')", args.bind);
     println!(
-        "   Network:   redis-cli -h {} -p {}",
+        "     Node.js: redis.createClient({{ url: 'redis://{}' }})",
+        args.bind
+    );
+    println!(
+        "     CLI:     redis-cli -h {} -p {}",
         args.bind.split(':').next().unwrap_or("127.0.0.1"),
         args.bind.split(':').nth(1).unwrap_or("6379")
     );
+    println!("\n   Embedded Mode (Rust):");
+    println!("     Database: ToonStore::open(\"{}\")?", args.data);
     println!(
-        "   Embedded:  ToonCache::new(\"{}\", {})",
+        "     Cached:   ToonCache::new(\"{}\", {})?",
         args.data, args.capacity
     );
     println!("\n🛑 Press Ctrl+C to stop\n");

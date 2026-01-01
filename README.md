@@ -94,6 +94,7 @@ INFO                - Server statistics
 - **[Quick Start Guide](docs/getting-started.md)** - Your first ToonStore app
 - **[Installation](docs/installation.md)** - All installation methods
 - **[Connection Guide](CONNECTION_GUIDE.md)** - Network vs Embedded mode
+- **[Architecture](ARCHITECTURE.md)** - 3-layer architecture & connection strings
 
 ### Usage Guides
 - **[Rust API Reference](docs/api-rust.md)** - Embedded library usage
@@ -101,7 +102,7 @@ INFO                - Server statistics
 - **[Configuration](docs/configuration.md)** - Server & cache tuning
 
 ### Advanced
-- **[Architecture](docs/architecture.md)** - How ToonStore works
+- **[TOON Format](docs/toon-format.md)** - Storage format specification
 - **[TOON Format](docs/toon-format.md)** - Storage format specification
 - **[Performance Tuning](docs/performance.md)** - Optimization guide
 - **[Benchmarks](BENCHMARKS.md)** - Detailed performance data
