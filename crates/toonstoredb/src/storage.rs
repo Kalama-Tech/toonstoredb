@@ -180,10 +180,23 @@ impl ToonStore {
         // Write line + newline
         data_file.write_all(line)?;
         data_file.write_all(b"\n")?;
+        data_file.flush()?; // Flush data to disk
 
         // Update index
         let row_id = index.len() as u64;
         index.push(Some(offset));
+
+        // Write index entry to disk immediately
+        let mut idx_file = self.idx_file.write();
+        
+        // Update count at start of index file
+        idx_file.seek(SeekFrom::Start(TOON_IDX_MAGIC.len() as u64))?;
+        idx_file.write_all(&(index.len() as u32).to_le_bytes())?;
+        
+        // Append new offset
+        idx_file.seek(SeekFrom::End(0))?;
+        idx_file.write_all(&offset.to_le_bytes())?;
+        idx_file.flush()?; // Flush index to disk
 
         // Update size
         *db_size = offset + line.len() as u64 + 1;
@@ -274,6 +287,16 @@ impl ToonStore {
 
         // Mark as deleted
         index[row_id as usize] = None;
+
+        // Update index file immediately
+        let mut idx_file = self.idx_file.write();
+        
+        // Seek to the offset for this row_id in the index file
+        // Index file format: TOONIDX1 (8 bytes) + count (4 bytes) + offsets (8 bytes each)
+        let offset_pos = TOON_IDX_MAGIC.len() as u64 + 4 + (row_id * 8);
+        idx_file.seek(SeekFrom::Start(offset_pos))?;
+        idx_file.write_all(&0u64.to_le_bytes())?; // 0 means deleted
+        idx_file.flush()?;
 
         Ok(())
     }

@@ -2,19 +2,75 @@
 
 use crate::resp::RespValue;
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::sync::{Arc, RwLock};
 use tooncache::ToonCache;
+use tracing::{error, info};
 
 pub struct CommandHandler {
     cache: Arc<ToonCache>,
     key_map: Arc<RwLock<HashMap<String, u64>>>,
+    keymap_path: String,
 }
 
 impl CommandHandler {
-    pub fn new(cache: Arc<ToonCache>) -> Self {
+    pub fn new(cache: Arc<ToonCache>, data_dir: &str) -> Self {
+        let keymap_path = format!("{}/keymap.txt", data_dir);
+        let key_map = Self::load_keymap(&keymap_path);
+        
+        info!("Loaded {} keys from persistent storage", key_map.len());
+        
         Self {
             cache,
-            key_map: Arc::new(RwLock::new(HashMap::new())),
+            key_map: Arc::new(RwLock::new(key_map)),
+            keymap_path,
+        }
+    }
+
+    /// Load key mapping from disk
+    fn load_keymap(path: &str) -> HashMap<String, u64> {
+        let mut map = HashMap::new();
+        
+        if let Ok(file) = File::open(path) {
+            let reader = BufReader::new(file);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    let parts: Vec<&str> = line.split('\t').collect();
+                    if parts.len() == 2 {
+                        if let Ok(row_id) = parts[1].parse::<u64>() {
+                            map.insert(parts[0].to_string(), row_id);
+                        }
+                    }
+                }
+            }
+        }
+        
+        map
+    }
+
+    /// Save key mapping to disk
+    fn save_keymap(&self) {
+        let key_map = self.key_map.read().unwrap();
+        
+        match OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&self.keymap_path)
+        {
+            Ok(file) => {
+                let mut writer = BufWriter::new(file);
+                for (key, row_id) in key_map.iter() {
+                    if let Err(e) = writeln!(writer, "{}\t{}", key, row_id) {
+                        error!("Failed to write keymap entry: {}", e);
+                    }
+                }
+                if let Err(e) = writer.flush() {
+                    error!("Failed to flush keymap: {}", e);
+                }
+            }
+            Err(e) => error!("Failed to open keymap file: {}", e),
         }
     }
 
@@ -80,14 +136,27 @@ impl CommandHandler {
 
         // Look up row_id from key_map
         let key_map = self.key_map.read().unwrap();
+        info!("GET: Looking for key '{}', keymap has {} keys", key, key_map.len());
         let row_id = match key_map.get(&key) {
-            Some(id) => *id,
-            None => return RespValue::BulkString(None), // Key not found
+            Some(id) => {
+                info!("GET: Found key '{}' -> row_id {}", key, id);
+                *id
+            },
+            None => {
+                info!("GET: Key '{}' not found in keymap", key);
+                return RespValue::BulkString(None)
+            }, // Key not found
         };
 
         match self.cache.get(row_id) {
-            Ok(data) => RespValue::BulkString(Some(data)),
-            Err(_) => RespValue::BulkString(None),
+            Ok(data) => {
+                info!("GET: Successfully retrieved data for row_id {}", row_id);
+                RespValue::BulkString(Some(data))
+            },
+            Err(e) => {
+                error!("GET: Failed to retrieve data for row_id {}: {}", row_id, e);
+                RespValue::BulkString(None)
+            },
         }
     }
 
@@ -121,6 +190,8 @@ impl CommandHandler {
         match self.cache.put(value) {
             Ok(row_id) => {
                 key_map.insert(key, row_id);
+                drop(key_map); // Release lock before save
+                self.save_keymap(); // Persist to disk
                 RespValue::SimpleString("OK".to_string())
             }
             Err(e) => RespValue::Error(format!("ERR {}", e)),
@@ -145,6 +216,11 @@ impl CommandHandler {
                     }
                 }
             }
+        }
+
+        drop(key_map); // Release lock
+        if deleted > 0 {
+            self.save_keymap(); // Persist to disk
         }
 
         RespValue::Integer(deleted)
@@ -206,7 +282,9 @@ impl CommandHandler {
     fn handle_flushdb(&self) -> RespValue {
         let mut key_map = self.key_map.write().unwrap();
         key_map.clear();
+        drop(key_map); // Release lock
         self.cache.clear_cache();
+        self.save_keymap(); // Persist empty keymap
         RespValue::SimpleString("OK".to_string())
     }
 
@@ -305,7 +383,7 @@ mod tests {
     fn test_ping() {
         let dir = TempDir::new().unwrap();
         let cache = Arc::new(ToonCache::new(dir.path(), 100).unwrap());
-        let handler = CommandHandler::new(cache);
+        let handler = CommandHandler::new(cache, dir.path().to_str().unwrap());
 
         let cmd = RespValue::Array(Some(vec![RespValue::BulkString(Some(b"PING".to_vec()))]));
 
@@ -317,7 +395,7 @@ mod tests {
     fn test_echo() {
         let dir = TempDir::new().unwrap();
         let cache = Arc::new(ToonCache::new(dir.path(), 100).unwrap());
-        let handler = CommandHandler::new(cache);
+        let handler = CommandHandler::new(cache, dir.path().to_str().unwrap());
 
         let cmd = RespValue::Array(Some(vec![
             RespValue::BulkString(Some(b"ECHO".to_vec())),
@@ -332,7 +410,7 @@ mod tests {
     fn test_set_and_get() {
         let dir = TempDir::new().unwrap();
         let cache = Arc::new(ToonCache::new(dir.path(), 100).unwrap());
-        let handler = CommandHandler::new(cache);
+        let handler = CommandHandler::new(cache, dir.path().to_str().unwrap());
 
         // SET key value
         let set_cmd = RespValue::Array(Some(vec![

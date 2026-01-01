@@ -6,6 +6,48 @@
 
 ToonStore is a high-performance key-value store that gives you the **speed of embedded databases** (5.28M ops/sec) with the **convenience of Redis compatibility**. Use it as an embedded library for maximum performance, or run it as a Redis-compatible server accessible from any language.
 
+---
+
+## 🎯 What is the TOON Format?
+
+**TOON (Token-Oriented Object Notation)** is a compact, human-readable data format specifically designed for the age of AI and LLMs. In a world where every token counts—both for cost and context window limits—TOON provides **40-60% token savings** compared to JSON while maintaining **higher LLM comprehension accuracy**.
+
+### Why TOON in the AI Era?
+
+- **🤖 LLM-Optimized**: Achieves 74% accuracy vs JSON's 70% in LLM comprehension benchmarks
+- **💰 Cost-Efficient**: ~40% fewer tokens = 40% lower API costs for AI applications
+- **📊 Schema-Aware**: Explicit `[N]` lengths and `{fields}` headers help LLMs parse data reliably
+- **🔄 JSON-Compatible**: Encodes the same objects, arrays, and primitives with lossless round-trips
+- **👁️ Human-Readable**: YAML-like readability with CSV-style compactness
+
+### TOON vs JSON Example
+
+**JSON** (22,250 tokens):
+```json
+{
+  "metrics": [
+    {"date": "2025-01-01", "views": 5715, "clicks": 211, "conversions": 28, "revenue": 7976.46},
+    {"date": "2025-01-02", "views": 7103, "clicks": 393, "conversions": 28, "revenue": 8360.53}
+  ]
+}
+```
+
+**TOON** (9,120 tokens - 59% reduction):
+```
+metrics[2]{date,views,clicks,conversions,revenue}:
+  2025-01-01,5715,211,28,7976.46
+  2025-01-02,7103,393,28,8360.53
+```
+
+### Learn More About TOON
+
+ToonStore uses the TOON format for efficient data storage. To learn more about the format specification:
+- **[TOON Format Repository](https://github.com/toon-format/toon)** - Official spec and implementations
+- **[TOON Specification](https://github.com/toon-format/spec/blob/main/SPEC.md)** - Complete technical specification  
+- **[Benchmarks](https://github.com/toon-format/toon?tab=readme-ov-file#benchmarks)** - Token efficiency & accuracy comparisons
+
+---
+
 [![CI/CD](https://github.com/Kalama-Tech/toonstoredb/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/Kalama-Tech/toonstoredb/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker Pulls](https://img.shields.io/docker/pulls/samso9th/toonstore)](https://hub.docker.com/r/samso9th/toonstore)
@@ -14,9 +56,10 @@ ToonStore is a high-performance key-value store that gives you the **speed of em
 
 ## 🎯 What is ToonStore?
 
-ToonStore is a **persistent key-value database** designed for applications that need:
+ToonStore is a **persistent key-value database** that combines the token-efficient TOON format with extreme performance:
 - 🚀 **Extreme performance** - 5.28M ops/sec for cached reads, 66x faster than network databases
-- 💾 **Data persistence** - All data stored on disk and survives restarts
+- 💾 **TOON format storage** - Token-efficient data format perfect for AI/LLM applications
+- 💰 **Cost-efficient** - ~40% fewer tokens means lower storage and transmission costs
 - 🔌 **Redis compatibility** - Works with existing Redis clients (Node.js, Python, Go, etc.)
 - 📦 **Embedded mode** - Use directly in Rust applications for maximum speed
 - 🌐 **Network mode** - Run as a server, connect from any language
@@ -28,15 +71,17 @@ ToonStore is a **persistent key-value database** designed for applications that 
 ### The Problem
 - **Redis** is fast but volatile (RAM-only by default) and complex to persist data
 - **PostgreSQL/MySQL** are reliable but slower for key-value workloads
-- **RocksDB/LevelDB** are fast but lack network access and Redis compatibility
+- **RocksDB/LevelDB** are fast but lack network access and use inefficient storage formats
+- **Traditional formats** (JSON, XML) waste tokens and storage space in the AI era
 
 ### The Solution: ToonStore
-ToonStore combines the best of all worlds:
+ToonStore combines the best of all worlds with TOON format storage:
 
 | Feature | ToonStore | Redis | PostgreSQL | RocksDB |
 |---------|-----------|-------|------------|---------|
 | **Speed** | 5.28M ops/sec (embedded) | ~80k ops/sec | ~65k ops/sec | ~100k ops/sec |
 | **Persistent** | ✅ Yes | ❌ Optional | ✅ Yes | ✅ Yes |
+| **Token-Efficient Format** | ✅ TOON (~40% savings) | ❌ Binary | ❌ Binary | ❌ Binary |
 | **Redis Protocol** | ✅ Yes | ✅ Yes | ❌ No | ❌ No |
 | **Embedded Mode** | ✅ Yes | ❌ No | ❌ No | ✅ Yes |
 | **Network Mode** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
@@ -51,17 +96,23 @@ ToonStore combines the best of all worlds:
 - **215k ops/sec** for storage operations (66x faster than network)
 - **32M deletions/second** (320x faster than Redis)
 
-### 2. **Data Persistence**
+### 2. **TOON Format Efficiency**
+- **~40% fewer tokens** compared to JSON storage
+- **Perfect for AI/LLM applications** - lower costs, faster processing
+- **Human-readable** - easy to inspect and debug stored data
+- **Schema-aware** - built-in structure validation
+
+### 3. **Data Persistence**
 - All data stored on disk using efficient TOON format
 - Survives restarts and crashes
 - Memory-mapped I/O for fast disk access
 
-### 3. **Redis Compatible**
+### 4. **Redis Compatible**
 - Use any Redis client library (50+ languages supported)
 - Familiar commands: `GET`, `SET`, `DEL`, `EXISTS`, `KEYS`
 - Drop-in replacement for Redis in many use cases
 
-### 4. **Dual Mode Operation**
+### 5. **Dual Mode Operation**
 
 **Network Mode:**
 ```javascript
@@ -79,12 +130,12 @@ let id = cache.put(b"data")?;
 let data = cache.get(id)?;
 ```
 
-### 5. **Built-in LRU Cache**
+### 6. **Built-in LRU Cache**
 - Automatic caching of hot data in RAM
 - 10,000 item default capacity (configurable)
 - No manual cache management needed
 
-### 6. **Easy Deployment**
+### 7. **Easy Deployment**
 - Single binary, no dependencies
 - Docker images available
 - Works on Linux, Windows, macOS
@@ -251,9 +302,9 @@ See [docs/connecting-from-apps.md](docs/connecting-from-apps.md) for more exampl
 
 ### Core Features (v0.1)
 - ✅ **Dual Mode**: Network (Redis-compatible) or Embedded (5.28M ops/sec)
+- ✅ **TOON Format**: Token-efficient storage (~40% savings vs JSON) designed for AI/LLMs
 - ✅ **LRU Cache**: Automatic caching with 5.28M ops/sec cached reads
 - ✅ **RESP Protocol**: Works with any Redis client library
-- ✅ **TOON Format**: Efficient token-oriented storage format
 - ✅ **Memory-Mapped I/O**: Fast disk access with OS-level caching
 - ✅ **Cross-Platform**: Linux, Windows, macOS
 - ✅ **Docker Ready**: Official images on Docker Hub
@@ -328,11 +379,13 @@ INFO                - Server statistics
 ## 🎯 Use Cases
 
 ### ✅ Ideal For:
+- 🤖 **AI/LLM applications** - Token-efficient storage for embeddings, prompts, and context
 - 🚀 **High-performance caching** (5.28M ops/sec!)
 - 📦 **Embedded databases** in Rust applications
-- 🔄 **Redis replacement** with better performance
-- 💾 **Key-value storage** with persistence
+- 🔄 **Redis replacement** with better performance and efficiency
+- 💾 **Key-value storage** with persistence and TOON format
 - ⚡ **In-process caching** with disk backup
+- 💰 **Cost-sensitive applications** - Reduce storage and transmission costs by ~40%
 
 ### ❌ Not Suitable For (v0.1):
 - 🔐 ACID transactions
