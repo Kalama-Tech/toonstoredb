@@ -2,7 +2,7 @@
 # Multi-stage build for minimal image size
 
 # Stage 1: Builder
-FROM rust:1.75-slim as builder
+FROM rust:1.83-slim AS builder
 
 WORKDIR /build
 

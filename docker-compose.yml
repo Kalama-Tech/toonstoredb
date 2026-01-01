@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  toonstore:
+    image: samso9th/toonstore:latest
+    container_name: toonstore
+    ports:
+      - "6379:6379"
+    volumes:
+      - toonstore_data:/data
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "tstd", "--health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Optional: redis-cli for testing
+  redis-cli:
+    image: redis:alpine
+    container_name: toonstore-cli
+    command: sh -c "sleep infinity"
+    depends_on:
+      - toonstore
+    network_mode: "service:toonstore"
+
+volumes:
+  toonstore_data:
+    driver: local

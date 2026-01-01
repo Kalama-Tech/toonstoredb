@@ -1,0 +1,40 @@
+# Ignore build artifacts
+target/
+*.rs.bk
+*.pdb
+
+# Ignore data directory
+data/
+*.toon
+
+# Ignore docs
+docs/
+*.md
+!README.md
+
+# Ignore git
+.git/
+.gitignore
+.github/
+
+# Ignore IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore test files
+tests/
+benches/
+examples/
+
+# Ignore Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+
+# Ignore misc
+.DS_Store
+Thumbs.db

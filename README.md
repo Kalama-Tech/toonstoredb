@@ -11,7 +11,30 @@ A **blazingly fast** embedded database with Redis-compatible protocol, built in 
 
 ## 🚀 Quick Start
 
-### Option 1: Network Server (Redis-compatible)
+### Option 1: Docker (Easiest)
+
+```bash
+# Pull and run
+docker run -d -p 6379:6379 -v toonstore_data:/data toonstore/tstd:latest
+
+# Connect with redis-cli
+redis-cli -h 127.0.0.1 -p 6379
+127.0.0.1:6379> SET mykey "Hello World"
+OK
+127.0.0.1:6379> GET mykey
+"Hello World"
+```
+
+**Or with Docker Compose:**
+```bash
+# Download docker-compose.yml
+curl -O https://raw.githubusercontent.com/yourusername/toonstoredb/main/docker-compose.yml
+
+# Start
+docker-compose up -d
+```
+
+### Option 2: Network Server (Redis-compatible)
 
 ```bash
 # Install
@@ -28,7 +51,7 @@ OK
 "Hello World"
 ```
 
-### Option 2: Embedded Library (Maximum Performance)
+### Option 3: Embedded Library (Maximum Performance)
 
 ```rust
 use tooncache::ToonCache;
@@ -76,6 +99,7 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed comparisons with Redis, PostgreS
 - ✅ **TOON Format**: Efficient token-oriented storage format
 - ✅ **Memory-Mapped I/O**: Fast disk access with OS-level caching
 - ✅ **Cross-Platform**: Linux, Windows, macOS
+- ✅ **Docker Ready**: Official images on Docker Hub
 
 ### Commands Supported (v0.1)
 ```
@@ -93,6 +117,7 @@ INFO                - Server statistics
 ### Getting Started
 - **[Quick Start Guide](docs/getting-started.md)** - Your first ToonStore app
 - **[Installation](docs/installation.md)** - All installation methods
+- **[Docker Deployment](DOCKER_DEPLOYMENT.md)** - Complete Docker guide
 - **[Connection Guide](CONNECTION_GUIDE.md)** - Network vs Embedded mode
 - **[Architecture](ARCHITECTURE.md)** - 3-layer architecture & connection strings
 
