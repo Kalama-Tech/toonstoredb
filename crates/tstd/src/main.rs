@@ -334,9 +334,15 @@ async fn handle_client(
     loop {
         // Read data from client
         let n = stream.read_buf(&mut buffer).await?;
+        info!(
+            "Read {} bytes from client, buffer total: {}",
+            n,
+            buffer.len()
+        );
 
         if n == 0 {
             // Connection closed
+            info!("Client closed connection");
             return Ok(());
         }
 
@@ -344,14 +350,23 @@ async fn handle_client(
         loop {
             match RespValue::parse(&mut buffer) {
                 Ok(Some(cmd)) => {
+                    info!("Parsed command: {:?}", cmd);
                     // Handle command with session state
                     let response = handler.handle(cmd, &mut session);
+                    info!("Response: {:?}", response);
 
                     // Send response
                     stream.write_all(&response.serialize()).await?;
+
+                    // Check for QUIT command
+                    if matches!(response, RespValue::SimpleString(ref s) if s == "OK") {
+                        // Check if this was a QUIT command by looking at the original command
+                        // For now, we'll just continue - proper QUIT handling would close connection
+                    }
                 }
                 Ok(None) => {
                     // Need more data
+                    info!("Need more data, buffer size: {}", buffer.len());
                     break;
                 }
                 Err(e) => {

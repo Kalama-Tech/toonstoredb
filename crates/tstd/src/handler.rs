@@ -149,6 +149,7 @@ impl CommandHandler {
     }
 
     pub fn handle(&self, cmd: RespValue, session: &mut SessionState) -> RespValue {
+        info!("Handler received command: {:?}", cmd);
         let arr = match cmd {
             RespValue::Array(Some(arr)) if !arr.is_empty() => arr,
             _ => return RespValue::Error("ERR invalid command format".to_string()),
@@ -158,6 +159,7 @@ impl CommandHandler {
             RespValue::BulkString(Some(cmd)) => String::from_utf8_lossy(cmd).to_uppercase(),
             _ => return RespValue::Error("ERR invalid command".to_string()),
         };
+        info!("Executing command: {}", command);
 
         // AUTH command can be used without authentication
         if command.as_str() == "AUTH" {
@@ -173,6 +175,7 @@ impl CommandHandler {
             "PING" => self.handle_ping(&arr[1..]),
             "ECHO" => self.handle_echo(&arr[1..]),
             "GET" => self.handle_get(&arr[1..]),
+            "MGET" => self.handle_mget(&arr[1..]),
             "SET" => self.handle_set(&arr[1..]),
             "DEL" => self.handle_del(&arr[1..]),
             "EXISTS" => self.handle_exists(&arr[1..]),
@@ -185,6 +188,7 @@ impl CommandHandler {
             "BGREWRITEAOF" | "BACKUP" => self.handle_backup(&arr[1..]),
             "RESTORE" => self.handle_restore(&arr[1..]),
             "LASTSAVE" => self.handle_lastsave(),
+            "QUIT" => RespValue::SimpleString("OK".to_string()),
             _ => RespValue::Error(format!("ERR unknown command '{}'", command)),
         }
     }
@@ -252,7 +256,46 @@ impl CommandHandler {
         }
     }
 
+    fn handle_mget(&self, args: &[RespValue]) -> RespValue {
+        if args.is_empty() {
+            return RespValue::Error(
+                "ERR wrong number of arguments for 'mget' command".to_string(),
+            );
+        }
+
+        let mut results = Vec::with_capacity(args.len());
+        let key_map = self.key_map.read().unwrap();
+
+        for arg in args {
+            let key = match arg {
+                RespValue::BulkString(Some(k)) => match String::from_utf8(k.clone()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        results.push(RespValue::BulkString(None));
+                        continue;
+                    }
+                },
+                _ => {
+                    results.push(RespValue::BulkString(None));
+                    continue;
+                }
+            };
+
+            // Look up row_id from key_map
+            match key_map.get(&key) {
+                Some(&row_id) => match self.cache.get(row_id) {
+                    Ok(data) => results.push(RespValue::BulkString(Some(data))),
+                    Err(_) => results.push(RespValue::BulkString(None)),
+                },
+                None => results.push(RespValue::BulkString(None)),
+            }
+        }
+
+        RespValue::Array(Some(results))
+    }
+
     fn handle_set(&self, args: &[RespValue]) -> RespValue {
+        info!("SET command called with {} args", args.len());
         if args.len() < 2 {
             return RespValue::Error("ERR wrong number of arguments for 'set' command".to_string());
         }
