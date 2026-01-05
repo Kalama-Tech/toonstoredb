@@ -1,0 +1,4 @@
+product:1	2
+user:1	0
+user:2	1
+product:2	3
