@@ -1,30 +1,53 @@
 //! Command handler for RESP server
 
+use crate::auth::{AuthConfig, SessionState};
+use crate::backup::BackupConfig;
 use crate::resp::RespValue;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::sync::{Arc, RwLock};
 use tooncache::ToonCache;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub struct CommandHandler {
     cache: Arc<ToonCache>,
     key_map: Arc<RwLock<HashMap<String, u64>>>,
     keymap_path: String,
+    auth_config: Arc<AuthConfig>,
+    backup_config: Arc<BackupConfig>,
 }
 
 impl CommandHandler {
-    pub fn new(cache: Arc<ToonCache>, data_dir: &str) -> Self {
+    pub fn new(
+        cache: Arc<ToonCache>,
+        data_dir: &str,
+        auth_config: Arc<AuthConfig>,
+        backup_config: Arc<BackupConfig>,
+    ) -> Self {
         let keymap_path = format!("{}/keymap.txt", data_dir);
-        let key_map = Self::load_keymap(&keymap_path);
+        let mut key_map = Self::load_keymap(&keymap_path);
 
-        info!("Loaded {} keys from persistent storage", key_map.len());
+        // If keymap is empty, rebuild it from the database
+        if key_map.is_empty() {
+            info!("Keymap is empty, rebuilding from database...");
+            key_map = Self::rebuild_keymap(&cache);
+            info!("Rebuilt {} keys from database", key_map.len());
+
+            // Save the rebuilt keymap
+            if !key_map.is_empty() {
+                Self::save_keymap_static(&keymap_path, &key_map);
+            }
+        } else {
+            info!("Loaded {} keys from persistent storage", key_map.len());
+        }
 
         Self {
             cache,
             key_map: Arc::new(RwLock::new(key_map)),
             keymap_path,
+            auth_config,
+            backup_config,
         }
     }
 
@@ -45,6 +68,59 @@ impl CommandHandler {
         }
 
         map
+    }
+
+    /// Rebuild keymap by scanning the database
+    fn rebuild_keymap(cache: &Arc<ToonCache>) -> HashMap<String, u64> {
+        let mut map = HashMap::new();
+
+        // Scan through all database entries
+        for result in cache.scan() {
+            match result {
+                Ok((row_id, data)) => {
+                    // Parse the TOON line to extract the "id" field
+                    if let Ok(json_str) = String::from_utf8(data) {
+                        // Try to parse as JSON to extract the "id" field
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                            if let Some(id) = value.get("id") {
+                                if let Some(id_str) = id.as_str() {
+                                    info!("Rebuilding key: {} -> {}", id_str, row_id);
+                                    map.insert(id_str.to_string(), row_id);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Error scanning database: {}", e);
+                }
+            }
+        }
+
+        map
+    }
+
+    /// Save keymap to disk (static version for use without self)
+    fn save_keymap_static(path: &str, key_map: &HashMap<String, u64>) {
+        match OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+        {
+            Ok(file) => {
+                let mut writer = BufWriter::new(file);
+                for (key, row_id) in key_map.iter() {
+                    if let Err(e) = writeln!(writer, "{}\t{}", key, row_id) {
+                        error!("Failed to write keymap entry: {}", e);
+                    }
+                }
+                if let Err(e) = writer.flush() {
+                    error!("Failed to flush keymap: {}", e);
+                }
+            }
+            Err(e) => error!("Failed to open keymap file: {}", e),
+        }
     }
 
     /// Save key mapping to disk
@@ -72,7 +148,7 @@ impl CommandHandler {
         }
     }
 
-    pub fn handle(&self, cmd: RespValue) -> RespValue {
+    pub fn handle(&self, cmd: RespValue, session: &mut SessionState) -> RespValue {
         let arr = match cmd {
             RespValue::Array(Some(arr)) if !arr.is_empty() => arr,
             _ => return RespValue::Error("ERR invalid command format".to_string()),
@@ -82,6 +158,16 @@ impl CommandHandler {
             RespValue::BulkString(Some(cmd)) => String::from_utf8_lossy(cmd).to_uppercase(),
             _ => return RespValue::Error("ERR invalid command".to_string()),
         };
+
+        // AUTH command can be used without authentication
+        if command.as_str() == "AUTH" {
+            return self.handle_auth(&arr[1..], session);
+        }
+
+        // Check authentication for all other commands
+        if self.auth_config.is_required() && !session.is_authenticated() {
+            return RespValue::Error("NOAUTH Authentication required".to_string());
+        }
 
         match command.as_str() {
             "PING" => self.handle_ping(&arr[1..]),
@@ -95,6 +181,10 @@ impl CommandHandler {
             "FLUSHDB" => self.handle_flushdb(),
             "INFO" => self.handle_info(&arr[1..]),
             "COMMAND" => self.handle_command(&arr[1..]),
+            "SAVE" | "BGSAVE" => self.handle_save(&arr[1..]),
+            "BGREWRITEAOF" | "BACKUP" => self.handle_backup(&arr[1..]),
+            "RESTORE" => self.handle_restore(&arr[1..]),
+            "LASTSAVE" => self.handle_lastsave(),
             _ => RespValue::Error(format!("ERR unknown command '{}'", command)),
         }
     }
@@ -318,6 +408,142 @@ impl CommandHandler {
         // Return empty array for COMMAND (redis-cli compatibility)
         RespValue::Array(Some(vec![]))
     }
+
+    fn handle_auth(&self, args: &[RespValue], session: &mut SessionState) -> RespValue {
+        if args.len() != 1 {
+            return RespValue::Error(
+                "ERR wrong number of arguments for 'auth' command".to_string(),
+            );
+        }
+
+        let password = match &args[0] {
+            RespValue::BulkString(Some(p)) => match String::from_utf8(p.clone()) {
+                Ok(s) => s,
+                Err(_) => return RespValue::Error("ERR invalid password".to_string()),
+            },
+            _ => return RespValue::Error("ERR invalid password type".to_string()),
+        };
+
+        if !self.auth_config.is_required() {
+            return RespValue::Error("ERR Client sent AUTH, but no password is set".to_string());
+        }
+
+        if self.auth_config.verify(&password) {
+            session.authenticate();
+            RespValue::SimpleString("OK".to_string())
+        } else {
+            RespValue::Error("WRONGPASS invalid username-password pair".to_string())
+        }
+    }
+
+    fn handle_save(&self, _args: &[RespValue]) -> RespValue {
+        match self.backup_config.create_backup(Some("manual")) {
+            Ok(path) => {
+                info!("Manual backup created: {:?}", path);
+                RespValue::SimpleString("OK".to_string())
+            }
+            Err(e) => {
+                error!("Failed to create backup: {}", e);
+                RespValue::Error(format!("ERR Failed to create backup: {}", e))
+            }
+        }
+    }
+
+    fn handle_backup(&self, args: &[RespValue]) -> RespValue {
+        let backup_name = if args.is_empty() {
+            "backup"
+        } else {
+            match &args[0] {
+                RespValue::BulkString(Some(n)) => match std::str::from_utf8(n) {
+                    Ok(s) => s,
+                    Err(_) => return RespValue::Error("ERR invalid backup name".to_string()),
+                },
+                _ => return RespValue::Error("ERR invalid backup name type".to_string()),
+            }
+        };
+
+        match self.backup_config.create_backup(Some(backup_name)) {
+            Ok(path) => {
+                info!("Named backup created: {:?}", path);
+                let filename = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown");
+                RespValue::BulkString(Some(filename.as_bytes().to_vec()))
+            }
+            Err(e) => {
+                error!("Failed to create backup: {}", e);
+                RespValue::Error(format!("ERR Failed to create backup: {}", e))
+            }
+        }
+    }
+
+    fn handle_restore(&self, args: &[RespValue]) -> RespValue {
+        if args.is_empty() {
+            return RespValue::Error(
+                "ERR wrong number of arguments for 'restore' command".to_string(),
+            );
+        }
+
+        let backup_file = match &args[0] {
+            RespValue::BulkString(Some(f)) => match String::from_utf8(f.clone()) {
+                Ok(s) => s,
+                Err(_) => return RespValue::Error("ERR invalid backup filename".to_string()),
+            },
+            _ => return RespValue::Error("ERR invalid backup filename type".to_string()),
+        };
+
+        let backup_path = if std::path::Path::new(&backup_file).is_absolute() {
+            std::path::PathBuf::from(&backup_file)
+        } else {
+            self.backup_config.backup_dir.join(&backup_file)
+        };
+
+        if !backup_path.exists() {
+            return RespValue::Error(format!("ERR Backup file not found: {:?}", backup_path));
+        }
+
+        warn!("Restoring from backup: {:?}", backup_path);
+
+        match self.backup_config.restore_backup(&backup_path) {
+            Ok(_) => {
+                info!("Database restored successfully from {:?}", backup_path);
+                RespValue::SimpleString("OK - Server restart recommended".to_string())
+            }
+            Err(e) => {
+                error!("Failed to restore backup: {}", e);
+                RespValue::Error(format!("ERR Failed to restore backup: {}", e))
+            }
+        }
+    }
+
+    fn handle_lastsave(&self) -> RespValue {
+        match self.backup_config.list_backups() {
+            Ok(backups) => {
+                let mut result = Vec::new();
+                result.push(RespValue::BulkString(Some(
+                    "Recent Backups:".as_bytes().to_vec(),
+                )));
+
+                for (i, backup) in backups.iter().take(10).enumerate() {
+                    let info = format!("{}. {} ({} bytes)", i + 1, backup.filename, backup.size);
+                    result.push(RespValue::BulkString(Some(info.as_bytes().to_vec())));
+                }
+
+                if result.len() == 1 {
+                    result.push(RespValue::BulkString(Some(
+                        "No backups found".as_bytes().to_vec(),
+                    )));
+                }
+
+                RespValue::Array(Some(result))
+            }
+            Err(e) => {
+                error!("Failed to list backups: {}", e);
+                RespValue::Error(format!("ERR Failed to list backups: {}", e))
+            }
+        }
+    }
 }
 
 /// Simple glob pattern matching for Redis KEYS command
@@ -385,11 +611,15 @@ mod tests {
     fn test_ping() {
         let dir = TempDir::new().unwrap();
         let cache = Arc::new(ToonCache::new(dir.path(), 100).unwrap());
-        let handler = CommandHandler::new(cache, dir.path().to_str().unwrap());
+        let auth = Arc::new(AuthConfig::disabled());
+        let backup = Arc::new(BackupConfig::new(dir.path(), None::<&str>));
+        let handler =
+            CommandHandler::new(cache, dir.path().to_str().unwrap(), auth.clone(), backup);
+        let mut session = SessionState::new(false);
 
         let cmd = RespValue::Array(Some(vec![RespValue::BulkString(Some(b"PING".to_vec()))]));
 
-        let resp = handler.handle(cmd);
+        let resp = handler.handle(cmd, &mut session);
         assert_eq!(resp, RespValue::SimpleString("PONG".to_string()));
     }
 
@@ -397,14 +627,18 @@ mod tests {
     fn test_echo() {
         let dir = TempDir::new().unwrap();
         let cache = Arc::new(ToonCache::new(dir.path(), 100).unwrap());
-        let handler = CommandHandler::new(cache, dir.path().to_str().unwrap());
+        let auth = Arc::new(AuthConfig::disabled());
+        let backup = Arc::new(BackupConfig::new(dir.path(), None::<&str>));
+        let handler =
+            CommandHandler::new(cache, dir.path().to_str().unwrap(), auth.clone(), backup);
+        let mut session = SessionState::new(false);
 
         let cmd = RespValue::Array(Some(vec![
             RespValue::BulkString(Some(b"ECHO".to_vec())),
             RespValue::BulkString(Some(b"hello".to_vec())),
         ]));
 
-        let resp = handler.handle(cmd);
+        let resp = handler.handle(cmd, &mut session);
         assert_eq!(resp, RespValue::BulkString(Some(b"hello".to_vec())));
     }
 
@@ -412,7 +646,11 @@ mod tests {
     fn test_set_and_get() {
         let dir = TempDir::new().unwrap();
         let cache = Arc::new(ToonCache::new(dir.path(), 100).unwrap());
-        let handler = CommandHandler::new(cache, dir.path().to_str().unwrap());
+        let auth = Arc::new(AuthConfig::disabled());
+        let backup = Arc::new(BackupConfig::new(dir.path(), None::<&str>));
+        let handler =
+            CommandHandler::new(cache, dir.path().to_str().unwrap(), auth.clone(), backup);
+        let mut session = SessionState::new(false);
 
         // SET key value
         let set_cmd = RespValue::Array(Some(vec![
@@ -421,7 +659,7 @@ mod tests {
             RespValue::BulkString(Some(b"myvalue".to_vec())),
         ]));
 
-        let resp = handler.handle(set_cmd);
+        let resp = handler.handle(set_cmd, &mut session);
         assert_eq!(resp, RespValue::SimpleString("OK".to_string()));
     }
 }

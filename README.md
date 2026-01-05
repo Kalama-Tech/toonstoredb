@@ -143,6 +143,106 @@ let data = cache.get(id)?;
 
 ---
 
+## 📦 How is Data Saved?
+
+ToonStore saves all data **persistently on disk** using the efficient TOON format:
+
+### Data Storage Format
+
+Data is stored in **TOON (Token-Oriented Object Notation)** format, which provides:
+- **~40% fewer tokens** compared to JSON
+- **Human-readable** format for easy inspection
+- **LLM-optimized** for better AI comprehension
+- **Persistent** - survives restarts and crashes
+
+### Storage Location
+
+By default, ToonStore saves data to:
+```
+./data/        # Data directory
+├── toon.db    # Main database file (TOON format)
+└── index.db   # Index mappings
+```
+
+### Example: JSON vs TOON
+
+When you save this data:
+```json
+{
+  "id": "user:1",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "age": 30
+}
+```
+
+ToonStore converts and stores it in TOON format:
+```
+user:1{id,name,email,age}:
+  user:1,John Doe,john@example.com,30
+```
+
+This format is:
+- ✅ **Persistent** - Written to disk immediately
+- ✅ **Efficient** - Smaller file size (~40% reduction)
+- ✅ **Fast** - Quick to parse and serialize
+- ✅ **Cached** - Hot data kept in memory (LRU cache)
+
+### Data Persistence Guarantees
+
+ToonStore provides:
+
+1. **Automatic Persistence**
+   - Every `SET` operation writes to disk
+   - No manual save/flush required
+   - Data survives process restarts
+
+2. **Memory-Mapped I/O**
+   - Fast disk access via OS-level caching
+   - Automatic synchronization
+   - Efficient memory usage
+
+3. **Built-in LRU Cache**
+   - 10,000 item default capacity
+   - 5.28M ops/sec for cached reads
+   - Automatic cache invalidation
+
+### Configuring Storage
+
+```bash
+# Specify data directory
+tstd --data /path/to/data
+
+# Configure cache size
+tstd --capacity 50000
+```
+
+### Checking Your Data
+
+```bash
+# View stored data files
+ls -lh ./data/
+
+# Check database size
+redis-cli DBSIZE
+
+# Get server info
+redis-cli INFO
+```
+
+### Why TOON Format?
+
+In the age of AI and LLMs, the TOON format provides significant advantages:
+
+1. **Cost Savings** - ~40% fewer tokens = 40% lower API costs
+2. **Context Efficiency** - More data fits in LLM context windows
+3. **Better Comprehension** - 74% accuracy vs JSON's 70% in LLM benchmarks
+4. **Schema-Aware** - Explicit structure helps LLMs parse reliably
+
+Learn more about TOON: **[TOON Format Repository](https://github.com/toon-format/toon)**
+
+---
+
 ## 📊 Performance Comparison
 
 ToonStore is designed for speed:
@@ -263,7 +363,7 @@ ToonStore is Redis-compatible, so you can use any Redis client library:
 ### Node.js
 ```javascript
 const redis = require('redis');
-const client = redis.createClient({ url: 'redis://localhost:6379' });
+const client = redis.createClient({ url: 'toonstore://localhost:6379' });
 
 await client.connect();
 await client.set('user:1', 'John Doe');
@@ -271,11 +371,13 @@ const user = await client.get('user:1');
 console.log(user); // "John Doe"
 ```
 
+> **Note**: ToonStore uses `toonstore://` as its connection string prefix for branding, but it's fully Redis-compatible so `redis://` also works with any Redis client library.
+
 ### Python
 ```python
 import redis
 
-client = redis.from_url('redis://localhost:6379')
+client = redis.from_url('toonstore://localhost:6379')
 client.set('user:1', 'John Doe')
 user = client.get('user:1')
 print(user)  # b'John Doe'
@@ -445,14 +547,14 @@ See [DOCKER_SETUP_GUIDE.md](DOCKER_SETUP_GUIDE.md) for complete Docker setup.
 **Python**
 ```python
 import redis
-client = redis.from_url('redis://localhost:6379')
+client = redis.from_url('toonstore://localhost:6379')
 client.set('key', 'value')
 ```
 
 **Node.js**
 ```javascript
 const Redis = require('ioredis');
-const client = new Redis('redis://localhost:6379');
+const client = new Redis('toonstore://localhost:6379');
 await client.set('key', 'value');
 ```
 
