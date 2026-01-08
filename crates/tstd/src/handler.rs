@@ -3,6 +3,7 @@
 use crate::auth::{AuthConfig, SessionState};
 use crate::backup::BackupConfig;
 use crate::resp::RespValue;
+use crate::users::{UserManager, UserRole};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -16,6 +17,7 @@ pub struct CommandHandler {
     keymap_path: String,
     auth_config: Arc<AuthConfig>,
     backup_config: Arc<BackupConfig>,
+    user_manager: Option<Arc<UserManager>>,
 }
 
 impl CommandHandler {
@@ -24,6 +26,7 @@ impl CommandHandler {
         data_dir: &str,
         auth_config: Arc<AuthConfig>,
         backup_config: Arc<BackupConfig>,
+        user_manager: Option<Arc<UserManager>>,
     ) -> Self {
         let keymap_path = format!("{}/keymap.txt", data_dir);
         let mut key_map = Self::load_keymap(&keymap_path);
@@ -48,6 +51,7 @@ impl CommandHandler {
             keymap_path,
             auth_config,
             backup_config,
+            user_manager,
         }
     }
 
@@ -159,7 +163,11 @@ impl CommandHandler {
             RespValue::BulkString(Some(cmd)) => String::from_utf8_lossy(cmd).to_uppercase(),
             _ => return RespValue::Error("ERR invalid command".to_string()),
         };
-        info!("Executing command: {}", command);
+        info!(
+            "Executing command: {} (user: {})",
+            command,
+            session.username()
+        );
 
         // AUTH command can be used without authentication
         if command.as_str() == "AUTH" {
@@ -169,6 +177,15 @@ impl CommandHandler {
         // Check authentication for all other commands
         if self.auth_config.is_required() && !session.is_authenticated() {
             return RespValue::Error("NOAUTH Authentication required".to_string());
+        }
+
+        // Check role-based permissions
+        if !session.can_execute(&command) {
+            return RespValue::Error(format!(
+                "NOPERM User '{}' does not have permission to execute '{}'",
+                session.username(),
+                command
+            ));
         }
 
         match command.as_str() {
@@ -188,6 +205,7 @@ impl CommandHandler {
             "BGREWRITEAOF" | "BACKUP" => self.handle_backup(&arr[1..]),
             "RESTORE" => self.handle_restore(&arr[1..]),
             "LASTSAVE" => self.handle_lastsave(),
+            "USER" => self.handle_user(&arr[1..], session),
             "QUIT" => RespValue::SimpleString("OK".to_string()),
             _ => RespValue::Error(format!("ERR unknown command '{}'", command)),
         }
@@ -453,29 +471,198 @@ impl CommandHandler {
     }
 
     fn handle_auth(&self, args: &[RespValue], session: &mut SessionState) -> RespValue {
-        if args.len() != 1 {
+        // Support both AUTH password and AUTH username password
+        if args.is_empty() || args.len() > 2 {
             return RespValue::Error(
                 "ERR wrong number of arguments for 'auth' command".to_string(),
             );
         }
 
-        let password = match &args[0] {
-            RespValue::BulkString(Some(p)) => match String::from_utf8(p.clone()) {
-                Ok(s) => s,
-                Err(_) => return RespValue::Error("ERR invalid password".to_string()),
-            },
-            _ => return RespValue::Error("ERR invalid password type".to_string()),
+        // If user manager is enabled, use multi-user authentication
+        if let Some(user_manager) = &self.user_manager {
+            let (username, password) = if args.len() == 2 {
+                // AUTH username password
+                let username = match &args[0] {
+                    RespValue::BulkString(Some(u)) => match String::from_utf8(u.clone()) {
+                        Ok(s) => s,
+                        Err(_) => return RespValue::Error("ERR invalid username".to_string()),
+                    },
+                    _ => return RespValue::Error("ERR invalid username type".to_string()),
+                };
+
+                let password = match &args[1] {
+                    RespValue::BulkString(Some(p)) => match String::from_utf8(p.clone()) {
+                        Ok(s) => s,
+                        Err(_) => return RespValue::Error("ERR invalid password".to_string()),
+                    },
+                    _ => return RespValue::Error("ERR invalid password type".to_string()),
+                };
+
+                (username, password)
+            } else {
+                // AUTH password (use 'admin' as default user)
+                let password = match &args[0] {
+                    RespValue::BulkString(Some(p)) => match String::from_utf8(p.clone()) {
+                        Ok(s) => s,
+                        Err(_) => return RespValue::Error("ERR invalid password".to_string()),
+                    },
+                    _ => return RespValue::Error("ERR invalid password type".to_string()),
+                };
+
+                ("admin".to_string(), password)
+            };
+
+            // Authenticate with user manager
+            if let Some(user) = user_manager.authenticate(&username, &password) {
+                session.authenticate(user.username.clone(), user.role);
+                info!("User '{}' authenticated successfully", username);
+                RespValue::SimpleString("OK".to_string())
+            } else {
+                warn!("Failed authentication attempt for user '{}'", username);
+                RespValue::Error("WRONGPASS invalid username-password pair".to_string())
+            }
+        } else {
+            // Fallback to simple password authentication
+            if args.len() != 1 {
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'auth' command".to_string(),
+                );
+            }
+
+            let password = match &args[0] {
+                RespValue::BulkString(Some(p)) => match String::from_utf8(p.clone()) {
+                    Ok(s) => s,
+                    Err(_) => return RespValue::Error("ERR invalid password".to_string()),
+                },
+                _ => return RespValue::Error("ERR invalid password type".to_string()),
+            };
+
+            if !self.auth_config.is_required() {
+                return RespValue::Error(
+                    "ERR Client sent AUTH, but no password is set".to_string(),
+                );
+            }
+
+            if self.auth_config.verify(&password) {
+                session.authenticate("default".to_string(), UserRole::Admin);
+                RespValue::SimpleString("OK".to_string())
+            } else {
+                RespValue::Error("WRONGPASS invalid username-password pair".to_string())
+            }
+        }
+    }
+
+    fn handle_user(&self, args: &[RespValue], session: &SessionState) -> RespValue {
+        let user_manager = match &self.user_manager {
+            Some(mgr) => mgr,
+            None => return RespValue::Error("ERR user management not enabled".to_string()),
         };
 
-        if !self.auth_config.is_required() {
-            return RespValue::Error("ERR Client sent AUTH, but no password is set".to_string());
+        if args.is_empty() {
+            return RespValue::Error(
+                "ERR wrong number of arguments for 'user' command".to_string(),
+            );
         }
 
-        if self.auth_config.verify(&password) {
-            session.authenticate();
-            RespValue::SimpleString("OK".to_string())
-        } else {
-            RespValue::Error("WRONGPASS invalid username-password pair".to_string())
+        let subcommand = match &args[0] {
+            RespValue::BulkString(Some(cmd)) => String::from_utf8_lossy(cmd).to_uppercase(),
+            _ => return RespValue::Error("ERR invalid subcommand".to_string()),
+        };
+
+        match subcommand.as_str() {
+            "CREATE" => {
+                // USER CREATE username password [role]
+                if args.len() < 3 {
+                    return RespValue::Error(
+                        "ERR USER CREATE requires username and password".to_string(),
+                    );
+                }
+
+                let username = match &args[1] {
+                    RespValue::BulkString(Some(u)) => String::from_utf8_lossy(u).to_string(),
+                    _ => return RespValue::Error("ERR invalid username".to_string()),
+                };
+
+                let password = match &args[2] {
+                    RespValue::BulkString(Some(p)) => String::from_utf8_lossy(p).to_string(),
+                    _ => return RespValue::Error("ERR invalid password".to_string()),
+                };
+
+                let role = if args.len() > 3 {
+                    match &args[3] {
+                        RespValue::BulkString(Some(r)) => {
+                            let role_str = String::from_utf8_lossy(r).to_uppercase();
+                            match role_str.as_str() {
+                                "ADMIN" => UserRole::Admin,
+                                "READWRITE" => UserRole::ReadWrite,
+                                "READONLY" => UserRole::ReadOnly,
+                                _ => return RespValue::Error("ERR invalid role".to_string()),
+                            }
+                        }
+                        _ => return RespValue::Error("ERR invalid role type".to_string()),
+                    }
+                } else {
+                    UserRole::ReadWrite // Default role
+                };
+
+                match user_manager.create_user(&username, &password, role) {
+                    Ok(_) => RespValue::SimpleString("OK".to_string()),
+                    Err(e) => RespValue::Error(format!("ERR {}", e)),
+                }
+            }
+            "DELETE" => {
+                // USER DELETE username
+                if args.len() != 2 {
+                    return RespValue::Error("ERR USER DELETE requires username".to_string());
+                }
+
+                let username = match &args[1] {
+                    RespValue::BulkString(Some(u)) => String::from_utf8_lossy(u).to_string(),
+                    _ => return RespValue::Error("ERR invalid username".to_string()),
+                };
+
+                match user_manager.delete_user(&username) {
+                    Ok(_) => RespValue::SimpleString("OK".to_string()),
+                    Err(e) => RespValue::Error(format!("ERR {}", e)),
+                }
+            }
+            "LIST" => {
+                // USER LIST
+                let users = user_manager.list_users();
+                let result: Vec<RespValue> = users
+                    .iter()
+                    .map(|u| RespValue::BulkString(Some(u.as_bytes().to_vec())))
+                    .collect();
+                RespValue::Array(Some(result))
+            }
+            "SETPASS" => {
+                // USER SETPASS username newpassword
+                if args.len() != 3 {
+                    return RespValue::Error(
+                        "ERR USER SETPASS requires username and new password".to_string(),
+                    );
+                }
+
+                let username = match &args[1] {
+                    RespValue::BulkString(Some(u)) => String::from_utf8_lossy(u).to_string(),
+                    _ => return RespValue::Error("ERR invalid username".to_string()),
+                };
+
+                let new_password = match &args[2] {
+                    RespValue::BulkString(Some(p)) => String::from_utf8_lossy(p).to_string(),
+                    _ => return RespValue::Error("ERR invalid password".to_string()),
+                };
+
+                match user_manager.change_password(&username, &new_password) {
+                    Ok(_) => RespValue::SimpleString("OK".to_string()),
+                    Err(e) => RespValue::Error(format!("ERR {}", e)),
+                }
+            }
+            "WHOAMI" => {
+                // USER WHOAMI
+                RespValue::BulkString(Some(session.username().as_bytes().to_vec()))
+            }
+            _ => RespValue::Error(format!("ERR unknown USER subcommand '{}'", subcommand)),
         }
     }
 
@@ -536,11 +723,47 @@ impl CommandHandler {
             _ => return RespValue::Error("ERR invalid backup filename type".to_string()),
         };
 
-        let backup_path = if std::path::Path::new(&backup_file).is_absolute() {
-            std::path::PathBuf::from(&backup_file)
-        } else {
-            self.backup_config.backup_dir.join(&backup_file)
+        // Security: Reject absolute paths to prevent path traversal
+        if std::path::Path::new(&backup_file).is_absolute() {
+            warn!("Rejected absolute path in RESTORE: {}", backup_file);
+            return RespValue::Error("ERR absolute paths not allowed".to_string());
+        }
+
+        // Security: Reject paths with ".." to prevent directory traversal
+        if backup_file.contains("..") {
+            warn!(
+                "Rejected path traversal attempt in RESTORE: {}",
+                backup_file
+            );
+            return RespValue::Error("ERR path traversal not allowed".to_string());
+        }
+
+        let backup_path = self.backup_config.backup_dir.join(&backup_file);
+
+        // Security: Validate the resolved path is within backup directory
+        let canonical = match backup_path.canonicalize() {
+            Ok(path) => path,
+            Err(_) => {
+                return RespValue::Error(format!("ERR Backup file not found: {}", backup_file));
+            }
         };
+
+        let backup_canonical = match self.backup_config.backup_dir.canonicalize() {
+            Ok(path) => path,
+            Err(_) => {
+                error!("Failed to canonicalize backup directory");
+                return RespValue::Error("ERR backup directory error".to_string());
+            }
+        };
+
+        // Ensure the resolved path is within the backup directory
+        if !canonical.starts_with(&backup_canonical) {
+            warn!(
+                "Path traversal attempt blocked: {} -> {:?}",
+                backup_file, canonical
+            );
+            return RespValue::Error("ERR path traversal attempt blocked".to_string());
+        }
 
         if !backup_path.exists() {
             return RespValue::Error(format!("ERR Backup file not found: {:?}", backup_path));

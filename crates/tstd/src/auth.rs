@@ -89,6 +89,8 @@ impl AuthConfig {
 #[derive(Clone)]
 pub struct SessionState {
     pub authenticated: bool,
+    pub username: Option<String>,
+    pub user_role: Option<crate::users::UserRole>,
 }
 
 impl SessionState {
@@ -96,15 +98,38 @@ impl SessionState {
         Self {
             // If auth not required, start authenticated
             authenticated: !auth_required,
+            username: if !auth_required {
+                Some("default".to_string())
+            } else {
+                None
+            },
+            user_role: if !auth_required {
+                Some(crate::users::UserRole::Admin)
+            } else {
+                None
+            },
         }
     }
 
-    pub fn authenticate(&mut self) {
+    pub fn authenticate(&mut self, username: String, role: crate::users::UserRole) {
         self.authenticated = true;
+        self.username = Some(username);
+        self.user_role = Some(role);
     }
 
     pub fn is_authenticated(&self) -> bool {
         self.authenticated
+    }
+
+    pub fn can_execute(&self, command: &str) -> bool {
+        match &self.user_role {
+            Some(role) => role.can_execute(command),
+            None => false,
+        }
+    }
+
+    pub fn username(&self) -> &str {
+        self.username.as_deref().unwrap_or("anonymous")
     }
 }
 

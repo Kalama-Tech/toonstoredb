@@ -14,5 +14,5 @@
 *.toon
 *.toon.idx
 tmp/
-test_data/
+test-data/
 docs/
