@@ -5,6 +5,12 @@
 use bytes::{Buf, BytesMut};
 use std::io::Cursor;
 
+/// Maximum bulk string size (512MB) - prevents DoS via memory exhaustion
+const MAX_BULK_STRING_SIZE: usize = 512 * 1024 * 1024;
+
+/// Maximum array size (1M elements) - prevents DoS via array bomb
+const MAX_ARRAY_SIZE: usize = 1024 * 1024;
+
 /// RESP data types
 #[derive(Debug, Clone, PartialEq)]
 pub enum RespValue {
@@ -125,6 +131,14 @@ fn parse_bulk_string(cursor: &mut Cursor<&[u8]>) -> Result<Option<RespValue>, St
 
     let len = len as usize;
 
+    // Security: Prevent DoS via large bulk string allocation
+    if len > MAX_BULK_STRING_SIZE {
+        return Err(format!(
+            "ERR bulk string too large: {} bytes (max: {} bytes)",
+            len, MAX_BULK_STRING_SIZE
+        ));
+    }
+
     // Check if we have enough data
     let remaining = cursor.remaining();
     if remaining < len + 2 {
@@ -161,6 +175,15 @@ fn parse_array(cursor: &mut Cursor<&[u8]>) -> Result<Option<RespValue>, String> 
     }
 
     let len = len as usize;
+
+    // Security: Prevent DoS via large array allocation
+    if len > MAX_ARRAY_SIZE {
+        return Err(format!(
+            "ERR array too large: {} elements (max: {} elements)",
+            len, MAX_ARRAY_SIZE
+        ));
+    }
+
     let mut arr = Vec::with_capacity(len);
 
     for _ in 0..len {

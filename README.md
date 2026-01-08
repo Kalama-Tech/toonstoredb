@@ -50,7 +50,7 @@ ToonStore uses the TOON format for efficient data storage. To learn more about t
 
 [![CI/CD](https://github.com/Kalama-Tech/toonstoredb/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/Kalama-Tech/toonstoredb/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Docker Pulls](https://img.shields.io/docker/pulls/samso9th/toonstore)](https://hub.docker.com/r/samso9th/toonstore)
+[![Docker Pulls](https://img.shields.io/docker/pulls/toonstore/toonstoredb)](https://hub.docker.com/r/toonstore/toonstoredb)
 
 ---
 
@@ -266,7 +266,7 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed benchmarks and methodology.
 
 ```bash
 # Pull from Docker Hub
-docker pull samso9th/toonstore:latest
+docker pull toonstore/toonstoredb:latest
 
 # Or pull from GitHub Container Registry
 docker pull ghcr.io/kalama-tech/toonstoredb:latest
@@ -276,7 +276,7 @@ docker run -d \
   --name toonstore \
   -p 6379:6379 \
   -v toonstore_data:/data \
-  samso9th/toonstore:latest
+  toonstore/toonstoredb:latest
 
 # Test connection
 redis-cli -h 127.0.0.1 -p 6379 PING

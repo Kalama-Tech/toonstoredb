@@ -5,6 +5,7 @@ mod backup;
 mod handler;
 mod resp;
 mod tls;
+mod users;
 
 use anyhow::Result;
 use auth::{AuthConfig, SessionState};
@@ -16,11 +17,15 @@ use std::sync::Arc;
 use tls::{TlsConfig, TlsMode};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 use tooncache::ToonCache;
 use tracing::{error, info, warn};
 
 use crate::handler::CommandHandler;
 use crate::resp::RespValue;
+
+/// Maximum concurrent connections - prevents DoS via connection flooding
+const MAX_CONNECTIONS: usize = 10000;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -44,6 +49,10 @@ struct Args {
     /// Password for authentication (or path to password file with @)
     #[arg(long)]
     password: Option<String>,
+
+    /// Enable multi-user authentication
+    #[arg(long)]
+    multi_user: bool,
 
     /// TLS/SSL mode: disable, prefer, require
     #[arg(long, default_value = "disable")]
@@ -102,22 +111,38 @@ async fn main() -> Result<()> {
     std::fs::create_dir_all(&args.data)?;
 
     // Initialize authentication
-    let auth_config = if let Some(password) = &args.password {
-        if password.starts_with('@') {
-            let path = password.trim_start_matches('@');
-            Arc::new(AuthConfig::from_password_file(path)?)
+    let (auth_config, user_manager) = if args.multi_user {
+        // Multi-user mode
+        info!("🔐 Multi-user authentication enabled");
+        let user_manager = match crate::users::UserManager::new(&args.data) {
+            Ok(mgr) => Arc::new(mgr),
+            Err(e) => {
+                error!("Failed to initialize user manager: {}", e);
+                return Err(e);
+            }
+        };
+        (Arc::new(AuthConfig::disabled()), Some(user_manager))
+    } else {
+        // Single-password mode
+        let auth_config = if let Some(password) = &args.password {
+            if password.starts_with('@') {
+                let path = password.trim_start_matches('@');
+                Arc::new(AuthConfig::from_password_file(path)?)
+            } else {
+                Arc::new(AuthConfig::from_password(password)?)
+            }
         } else {
-            Arc::new(AuthConfig::from_password(password)?)
-        }
-    } else {
-        Arc::new(AuthConfig::disabled())
-    };
+            Arc::new(AuthConfig::disabled())
+        };
 
-    if auth_config.is_required() {
-        info!("✅ Authentication: ENABLED");
-    } else {
-        warn!("⚠️  Authentication: DISABLED (use --password to enable)");
-    }
+        if auth_config.is_required() {
+            info!("✅ Single-password authentication: ENABLED");
+        } else {
+            warn!("⚠️  Authentication: DISABLED (use --password or --multi-user to enable)");
+        }
+
+        (auth_config, None)
+    };
 
     // Initialize TLS
     let tls_mode = TlsMode::from_str(&args.tls_mode)?;
@@ -152,6 +177,7 @@ async fn main() -> Result<()> {
         &args.data,
         auth_config.clone(),
         backup_config.clone(),
+        user_manager.clone(),
     ));
 
     // Start auto-backup task if enabled
@@ -183,6 +209,13 @@ async fn main() -> Result<()> {
     // Bind TCP listener
     let listener = TcpListener::bind(&args.bind).await?;
     info!("Server listening on {}", args.bind);
+
+    // Connection limiter to prevent DoS attacks
+    let connection_limiter = Arc::new(Semaphore::new(MAX_CONNECTIONS));
+    info!(
+        "Connection limit: {} concurrent connections",
+        MAX_CONNECTIONS
+    );
 
     // Print connection info
     println!("\n╔══════════════════════════════════════════════════════════════╗");
@@ -306,10 +339,26 @@ async fn main() -> Result<()> {
         match listener.accept().await {
             Ok((stream, addr)) => {
                 info!("New connection from {}", addr);
+
+                // Acquire connection permit (blocks if at limit)
+                let permit = match connection_limiter.clone().try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        warn!(
+                            "Connection limit reached, rejecting connection from {}",
+                            addr
+                        );
+                        continue;
+                    }
+                };
+
                 let handler = Arc::clone(&handler);
                 let auth_config = Arc::clone(&auth_config);
 
                 tokio::spawn(async move {
+                    // Permit is automatically released when dropped
+                    let _permit = permit;
+
                     if let Err(e) = handle_client(stream, handler, auth_config).await {
                         error!("Error handling client {}: {}", addr, e);
                     }

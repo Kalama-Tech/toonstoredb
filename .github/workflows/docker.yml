@@ -10,7 +10,7 @@ on:
     types: [closed]
 
 env:
-  DOCKER_IMAGE: samso9th/toonstore
+  DOCKER_IMAGE: toonstore/toonstoredb
   DOCKER_PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
@@ -71,7 +71,7 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           repository: ${{ env.DOCKER_IMAGE }}
-          short-description: "ToonStore - Blazingly fast embedded database with Redis-compatible protocol"
+          short-description: "ToonStore - High-performance key-value database with TOON format support and Redis-compatible protocol"
           readme-filepath: ./README.md
         continue-on-error: true
 
