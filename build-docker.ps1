@@ -1,7 +1,7 @@
 # Build and push ToonStore Docker image (Windows)
 
 # Configuration
-$IMAGE_NAME = "samso9th/toonstore"
+$IMAGE_NAME = "toonstore/toonstoredb"
 $VERSION = (Select-String -Path "Cargo.toml" -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
 $LATEST_TAG = "${IMAGE_NAME}:latest"
 $VERSION_TAG = "${IMAGE_NAME}:${VERSION}"

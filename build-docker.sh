@@ -3,7 +3,7 @@
 set -e
 
 # Configuration
-IMAGE_NAME="samso9th/toonstore"
+IMAGE_NAME="toonstore/toonstoredb"
 VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
 LATEST_TAG="${IMAGE_NAME}:latest"
 VERSION_TAG="${IMAGE_NAME}:${VERSION}"
