@@ -172,7 +172,7 @@ mod tests {
         let mut session = SessionState::new(true);
         assert!(!session.is_authenticated());
 
-        session.authenticate();
+        session.authenticate("testuser".to_string(), crate::users::UserRole::Admin);
         assert!(session.is_authenticated());
     }
 }

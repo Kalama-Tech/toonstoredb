@@ -879,8 +879,13 @@ mod tests {
         let cache = Arc::new(ToonCache::new(dir.path(), 100).unwrap());
         let auth = Arc::new(AuthConfig::disabled());
         let backup = Arc::new(BackupConfig::new(dir.path(), None::<&str>));
-        let handler =
-            CommandHandler::new(cache, dir.path().to_str().unwrap(), auth.clone(), backup);
+        let handler = CommandHandler::new(
+            cache,
+            dir.path().to_str().unwrap(),
+            auth.clone(),
+            backup,
+            None,
+        );
         let mut session = SessionState::new(false);
 
         let cmd = RespValue::Array(Some(vec![RespValue::BulkString(Some(b"PING".to_vec()))]));
@@ -895,8 +900,13 @@ mod tests {
         let cache = Arc::new(ToonCache::new(dir.path(), 100).unwrap());
         let auth = Arc::new(AuthConfig::disabled());
         let backup = Arc::new(BackupConfig::new(dir.path(), None::<&str>));
-        let handler =
-            CommandHandler::new(cache, dir.path().to_str().unwrap(), auth.clone(), backup);
+        let handler = CommandHandler::new(
+            cache,
+            dir.path().to_str().unwrap(),
+            auth.clone(),
+            backup,
+            None,
+        );
         let mut session = SessionState::new(false);
 
         let cmd = RespValue::Array(Some(vec![
@@ -914,8 +924,13 @@ mod tests {
         let cache = Arc::new(ToonCache::new(dir.path(), 100).unwrap());
         let auth = Arc::new(AuthConfig::disabled());
         let backup = Arc::new(BackupConfig::new(dir.path(), None::<&str>));
-        let handler =
-            CommandHandler::new(cache, dir.path().to_str().unwrap(), auth.clone(), backup);
+        let handler = CommandHandler::new(
+            cache,
+            dir.path().to_str().unwrap(),
+            auth.clone(),
+            backup,
+            None,
+        );
         let mut session = SessionState::new(false);
 
         // SET key value
